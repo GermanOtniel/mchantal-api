@@ -15,7 +15,6 @@ export function buildApp() {
   app.register(helmet)
 
   app.get('/health', async () => {
-    console.log("Testing...");
     return { status: 'ok', timestamp: new Date().toISOString() }
   })
 
