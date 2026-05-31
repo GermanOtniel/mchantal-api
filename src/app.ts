@@ -1,21 +1,29 @@
-import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import helmet from '@fastify/helmet'
+import { TypeBoxTypeProvider } from '@fastify/type-provider-typebox'
+import Fastify from 'fastify'
+import { getEnv } from './config/env'
+import { authPlugin } from './modules/auth/routes/auth.routes'
 
-export function buildApp() {
+export async function buildApp() {
+  const env = getEnv()
+
   const app = Fastify({
-    logger: {
-      transport: {
-        target: 'pino-pretty'
-      }
-    }
-  })
+    logger: env.isDev
+      ? {
+          transport: {
+            target: 'pino-pretty',
+            options: { colorize: true },
+          },
+        }
+      : true,
+  }).withTypeProvider<TypeBoxTypeProvider>()
 
-  app.register(cors)
-  app.register(helmet)
+  await app.register(cors)
+  await app.register(helmet)
+  await app.register(authPlugin, { prefix: '/v1/auth' })
 
   app.get('/health', async () => {
-    console.log("Testing...");
     return { status: 'ok', timestamp: new Date().toISOString() }
   })
 
