@@ -19,6 +19,18 @@ function optionalInt(name: string, fallback: number): number {
   return n
 }
 
+export type WhatsAppProviderKind = 'meta' | 'dialog360'
+
+export type WhatsAppEnv = {
+  provider: WhatsAppProviderKind
+  verifyToken: string
+  meta: {
+    appSecret: string
+    accessToken: string
+    phoneNumberId: string
+  }
+}
+
 export type AppEnv = {
   nodeEnv: string
   isDev: boolean
@@ -27,6 +39,7 @@ export type AppEnv = {
   refreshTokenDays: number
   passwordResetTokenMinutes: number
   frontendPasswordResetUrl: string
+  whatsappEnabled: boolean
   smtp: {
     host: string
     port: number
@@ -38,6 +51,7 @@ export type AppEnv = {
 }
 
 let cached: AppEnv | null = null
+let cachedWhatsApp: WhatsAppEnv | null = null
 
 /** Lee y valida env; cachea el resultado. Llamar tras dotenv.config() */
 export function getEnv(): AppEnv {
@@ -50,6 +64,7 @@ export function getEnv(): AppEnv {
     refreshTokenDays: optionalInt('REFRESH_TOKEN_DAYS', 30),
     passwordResetTokenMinutes: optionalInt('PASSWORD_RESET_TOKEN_MINUTES', 60),
     frontendPasswordResetUrl: required('FRONTEND_PASSWORD_RESET_URL'),
+    whatsappEnabled: optional('WHATSAPP_ENABLED', 'false') === 'true',
     smtp: {
       host: required('SMTP_HOST'),
       port: optionalInt('SMTP_PORT', 587),
@@ -60,4 +75,25 @@ export function getEnv(): AppEnv {
     },
   }
   return cached
+}
+
+/** Config WhatsApp; requiere WHATSAPP_ENABLED=true y credenciales Meta */
+export function getWhatsAppEnv(): WhatsAppEnv {
+  if (cachedWhatsApp) return cachedWhatsApp
+
+  const provider = optional('WHATSAPP_PROVIDER', 'meta') as WhatsAppProviderKind
+  if (provider !== 'meta' && provider !== 'dialog360') {
+    throw new Error('WHATSAPP_PROVIDER must be "meta" or "dialog360"')
+  }
+
+  cachedWhatsApp = {
+    provider,
+    verifyToken: required('WHATSAPP_VERIFY_TOKEN'),
+    meta: {
+      appSecret: required('META_APP_SECRET'),
+      accessToken: required('META_WHATSAPP_ACCESS_TOKEN'),
+      phoneNumberId: required('META_WHATSAPP_PHONE_NUMBER_ID'),
+    },
+  }
+  return cachedWhatsApp
 }
