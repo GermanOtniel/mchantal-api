@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox'
 import { getEnv } from '../../../config/env'
+import { jwtAuthHook } from '../../../shared/auth/jwt-auth.hook'
 import { createNodemailerMailer } from '../../../shared/email/nodemailer.mailer'
 import { AuthController } from '../controllers/auth.controller'
 import {
@@ -9,6 +10,7 @@ import {
   LoginBodySchema,
   LoginResponseSchema,
   LogoutBodySchema,
+  MeResponseSchema,
   RefreshBodySchema,
   RefreshResponseSchema,
   RegisterBodySchema,
@@ -100,5 +102,19 @@ export const authPlugin: FastifyPluginAsyncTypebox = async (app) => {
       },
     },
     controller.resetPassword
+  )
+
+  app.get(
+    '/me',
+    {
+      preHandler: jwtAuthHook,
+      schema: {
+        response: {
+          200: MeResponseSchema,
+          401: ErrorResponseSchema,
+        },
+      },
+    },
+    controller.me
   )
 }

@@ -1,6 +1,11 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox'
 import { getWhatsAppEnv } from '../../../config/env'
 import { jwtAuthHook } from '../../../shared/auth/jwt-auth.hook'
+import { PERMISSIONS } from '../../../shared/rbac/permissions.catalog'
+import {
+  loadPermissionsHook,
+  requirePermission,
+} from '../../../shared/rbac/rbac.hooks'
 import { createWhatsAppProvider } from '../../../shared/whatsapp/create-whatsapp-provider'
 import { HttpError } from '../../auth/http-error'
 import { WhatsAppController } from '../controllers/whatsapp.controller'
@@ -34,15 +39,18 @@ export const whatsappPlugin: FastifyPluginAsyncTypebox = async (app) => {
   })
 
   app.addHook('preHandler', jwtAuthHook)
+  app.addHook('preHandler', loadPermissionsHook)
 
   app.get(
     '/conversations',
     {
+      preHandler: requirePermission(PERMISSIONS.WHATSAPP_CONVERSATIONS_READ),
       schema: {
         querystring: ListConversationsQuerySchema,
         response: {
           200: ConversationsListResponseSchema,
           401: ErrorResponseSchema,
+          403: ErrorResponseSchema,
         },
       },
     },
@@ -52,11 +60,13 @@ export const whatsappPlugin: FastifyPluginAsyncTypebox = async (app) => {
   app.post(
     '/conversations/:id/read',
     {
+      preHandler: requirePermission(PERMISSIONS.WHATSAPP_CONVERSATIONS_READ),
       schema: {
         params: ConversationIdParamsSchema,
         response: {
           200: MarkConversationReadResponseSchema,
           401: ErrorResponseSchema,
+          403: ErrorResponseSchema,
           404: ErrorResponseSchema,
         },
       },
@@ -67,12 +77,14 @@ export const whatsappPlugin: FastifyPluginAsyncTypebox = async (app) => {
   app.get(
     '/conversations/:id/messages',
     {
+      preHandler: requirePermission(PERMISSIONS.WHATSAPP_CONVERSATIONS_READ),
       schema: {
         params: ConversationIdParamsSchema,
         querystring: ListMessagesQuerySchema,
         response: {
           200: MessagesListResponseSchema,
           401: ErrorResponseSchema,
+          403: ErrorResponseSchema,
           404: ErrorResponseSchema,
         },
       },
@@ -83,12 +95,14 @@ export const whatsappPlugin: FastifyPluginAsyncTypebox = async (app) => {
   app.post(
     '/messages',
     {
+      preHandler: requirePermission(PERMISSIONS.WHATSAPP_MESSAGES_SEND),
       schema: {
         body: SendMessageBodySchema,
         response: {
           201: SendMessageResponseSchema,
           400: ErrorResponseSchema,
           401: ErrorResponseSchema,
+          403: ErrorResponseSchema,
           404: ErrorResponseSchema,
           502: ErrorResponseSchema,
         },

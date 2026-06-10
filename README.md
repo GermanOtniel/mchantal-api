@@ -43,3 +43,51 @@ La lógica de negocio usa `WhatsAppProvider` (tipos normalizados). Solo el adapt
 ```bash
 npm run migration:run
 ```
+
+## RBAC (roles y permisos)
+
+Sistema de roles custom con catálogo de permisos en código. Los permisos se validan en backend por ruta; el CRM oculta vistas y acciones según la sesión.
+
+### Permisos iniciales
+
+| Clave | Descripción |
+|-------|-------------|
+| `whatsapp.conversations.read` | Ver conversaciones y mensajes |
+| `whatsapp.messages.send` | Enviar mensajes |
+| `roles.manage` | CRUD de roles |
+| `users.manage` | Asignar roles a usuarios |
+
+### Roles de sistema (seed)
+
+- **Super Admin** (`super-admin`) — todos los permisos
+- **Agente WhatsApp** (`whatsapp-agent`) — leer y enviar
+- **Visor WhatsApp** (`whatsapp-viewer`) — solo leer
+
+### Bootstrap del primer Super Admin
+
+1. Correr migraciones: `npm run migration:run`
+2. Registrar tu usuario en `/v1/auth/register` o desde el CRM
+3. Asignar el rol:
+
+```bash
+npm run rbac:assign-role -- super-admin tu@email.com
+```
+
+El script es idempotente (se puede ejecutar varias veces).
+
+### Rutas RBAC
+
+| Método | Ruta | Permiso |
+|--------|------|---------|
+| `GET` | `/v1/rbac/permissions` | `roles.manage` |
+| `GET` | `/v1/rbac/roles` | `roles.manage` o `users.manage` |
+| `PUT` | `/v1/rbac/roles/:id/permissions` | `roles.manage` |
+| `GET/PUT` | `/v1/rbac/users/:id/roles` | `users.manage` |
+
+### Agregar permisos a features nuevas
+
+1. Registrar en `src/shared/rbac/permissions.catalog.ts`
+2. Añadir INSERT en una migración o seed
+3. Proteger rutas con `requirePermission(...)` en Fastify
+4. Proteger vistas con `RequirePermission` / `usePermission` en el CRM
+
