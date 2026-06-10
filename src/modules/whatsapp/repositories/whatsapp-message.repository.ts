@@ -56,8 +56,8 @@ export class WhatsAppMessageRepository {
   ): Promise<WhatsAppMessage[]> {
     const qb = this.repo
       .createQueryBuilder('m')
-      .where('m.conversation_id = :conversationId', { conversationId })
-      .orderBy('m.sent_at', 'DESC')
+      .where('m.conversationId = :conversationId', { conversationId })
+      .orderBy('m.sentAt', 'DESC')
       .addOrderBy('m.id', 'DESC')
       .take(limit)
 

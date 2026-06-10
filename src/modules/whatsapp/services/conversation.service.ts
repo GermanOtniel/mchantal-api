@@ -6,6 +6,7 @@ import type {
 import type { WhatsAppProvider } from '../../../shared/whatsapp/whatsapp-provider.interface'
 import { HttpError } from '../../auth/http-error'
 import { WhatsAppContactRepository } from '../repositories/whatsapp-contact.repository'
+import { WhatsAppConversationReadStateRepository } from '../repositories/whatsapp-conversation-read-state.repository'
 import { WhatsAppConversationRepository } from '../repositories/whatsapp-conversation.repository'
 import { WhatsAppMessageRepository } from '../repositories/whatsapp-message.repository'
 
@@ -13,6 +14,7 @@ export class ConversationService {
   private readonly contacts = new WhatsAppContactRepository()
   private readonly conversations = new WhatsAppConversationRepository()
   private readonly messages = new WhatsAppMessageRepository()
+  private readonly readStates = new WhatsAppConversationReadStateRepository()
 
   async processInboundEvents(events: NormalizedInboundEvent[]): Promise<void> {
     for (const event of events) {
@@ -50,9 +52,10 @@ export class ConversationService {
       sentAt: message.timestamp,
     })
 
-    await this.conversations.touchLastMessageAt(
+    await this.conversations.touchLastMessage(
       conversation.id,
-      message.timestamp
+      message.timestamp,
+      'inbound'
     )
   }
 
@@ -71,19 +74,48 @@ export class ConversationService {
     )
   }
 
-  async listConversations(limit: number, cursor?: string) {
-    const rows = await this.conversations.listPaginated(limit, cursor)
+  async listConversations(
+    limit: number,
+    cursor: string | undefined,
+    viewerUserId: string,
+    _assigneeUserId?: string
+  ) {
+    // _assigneeUserId reserved for future assignment-based filtering
+    const rows = await this.conversations.listPaginatedForViewer(
+      limit,
+      viewerUserId,
+      cursor
+    )
+
     return rows.map((c) => ({
       id: c.id,
       status: c.status,
       leadId: c.leadId,
       lastMessageAt: c.lastMessageAt?.toISOString() ?? null,
+      lastMessageDirection: c.lastMessageDirection,
+      needsReply: c.lastMessageDirection === 'inbound',
+      unreadCount: c.unreadCount,
       contact: {
         waId: c.contact.waId,
         profileName: c.contact.profileName,
       },
       createdAt: c.createdAt.toISOString(),
     }))
+  }
+
+  async markConversationRead(conversationId: string, viewerUserId: string) {
+    const conversation = await this.conversations.findById(conversationId)
+    if (!conversation) {
+      throw new HttpError('Conversation not found', 404, 'CONVERSATION_NOT_FOUND')
+    }
+
+    await this.readStates.upsertLastReadAt(
+      conversationId,
+      viewerUserId,
+      new Date()
+    )
+
+    return { unreadCount: 0 }
   }
 
   async listMessages(conversationId: string, limit: number, cursor?: string) {
@@ -163,7 +195,11 @@ export class ConversationService {
       sentAt,
     })
 
-    await this.conversations.touchLastMessageAt(conversation.id, sentAt)
+    await this.conversations.touchLastMessage(
+      conversation.id,
+      sentAt,
+      'outbound'
+    )
 
     return {
       providerMessageId: result.providerMessageId,

@@ -5,11 +5,19 @@ export const ErrorResponseSchema = Type.Object({
   code: Type.String(),
 })
 
+export const MessageDirectionSchema = Type.Union([
+  Type.Literal('inbound'),
+  Type.Literal('outbound'),
+])
+
 export const ConversationItemSchema = Type.Object({
   id: Type.String({ format: 'uuid' }),
   status: Type.Union([Type.Literal('open'), Type.Literal('closed')]),
   leadId: Type.Union([Type.String({ format: 'uuid' }), Type.Null()]),
   lastMessageAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+  lastMessageDirection: Type.Union([MessageDirectionSchema, Type.Null()]),
+  needsReply: Type.Boolean(),
+  unreadCount: Type.Integer({ minimum: 0 }),
   contact: Type.Object({
     waId: Type.String(),
     profileName: Type.Union([Type.String(), Type.Null()]),
@@ -23,9 +31,18 @@ export const ConversationsListResponseSchema = Type.Object({
 })
 
 export const ListConversationsQuerySchema = Type.Object({
-  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, default: 20 })),
+  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, default: 50 })),
   cursor: Type.Optional(Type.String({ format: 'uuid' })),
+  userId: Type.Optional(Type.String({ format: 'uuid' })),
 })
+
+export const MessageDeliveryStatusSchema = Type.Union([
+  Type.Literal('pending'),
+  Type.Literal('sent'),
+  Type.Literal('delivered'),
+  Type.Literal('read'),
+  Type.Literal('failed'),
+])
 
 export const MessageItemSchema = Type.Object({
   id: Type.String({ format: 'uuid' }),
@@ -34,7 +51,7 @@ export const MessageItemSchema = Type.Object({
   providerMessageId: Type.String(),
   type: Type.String(),
   bodyText: Type.Union([Type.String(), Type.Null()]),
-  status: Type.String(),
+  status: MessageDeliveryStatusSchema,
   sentAt: Type.String({ format: 'date-time' }),
 })
 
@@ -66,4 +83,8 @@ export const SendMessageResponseSchema = Type.Object({
 
 export const ConversationIdParamsSchema = Type.Object({
   id: Type.String({ format: 'uuid' }),
+})
+
+export const MarkConversationReadResponseSchema = Type.Object({
+  unreadCount: Type.Integer({ minimum: 0 }),
 })

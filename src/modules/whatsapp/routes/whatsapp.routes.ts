@@ -13,6 +13,7 @@ import {
   SendMessageBodySchema,
   SendMessageResponseSchema,
   ConversationIdParamsSchema,
+  MarkConversationReadResponseSchema,
 } from '../schemas/whatsapp.schemas'
 import { ConversationService } from '../services/conversation.service'
 
@@ -46,6 +47,21 @@ export const whatsappPlugin: FastifyPluginAsyncTypebox = async (app) => {
       },
     },
     controller.listConversations
+  )
+
+  app.post(
+    '/conversations/:id/read',
+    {
+      schema: {
+        params: ConversationIdParamsSchema,
+        response: {
+          200: MarkConversationReadResponseSchema,
+          401: ErrorResponseSchema,
+          404: ErrorResponseSchema,
+        },
+      },
+    },
+    controller.markConversationRead
   )
 
   app.get(

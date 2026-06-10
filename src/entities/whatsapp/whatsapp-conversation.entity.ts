@@ -9,7 +9,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm'
 import { WhatsAppContact } from './whatsapp-contact.entity'
-import { WhatsAppMessage } from './whatsapp-message.entity'
+import { WhatsAppMessage, type MessageDirection } from './whatsapp-message.entity'
 
 export type ConversationStatus = 'open' | 'closed'
 
@@ -35,6 +35,14 @@ export class WhatsAppConversation {
 
   @Column({ type: 'timestamptz', nullable: true, name: 'last_message_at' })
   lastMessageAt!: Date | null
+
+  @Column({
+    type: 'varchar',
+    length: 20,
+    nullable: true,
+    name: 'last_message_direction',
+  })
+  lastMessageDirection!: MessageDirection | null
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date

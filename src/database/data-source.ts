@@ -7,9 +7,11 @@ import { PasswordResetToken } from '../entities/auth/password-reset-token.entity
 import { WhatsAppContact } from '../entities/whatsapp/whatsapp-contact.entity'
 import { WhatsAppConversation } from '../entities/whatsapp/whatsapp-conversation.entity'
 import { WhatsAppMessage } from '../entities/whatsapp/whatsapp-message.entity'
+import { WhatsAppConversationReadState } from '../entities/whatsapp/whatsapp-conversation-read-state.entity'
 import { WhatsAppMediaAsset } from '../entities/whatsapp/whatsapp-media-asset.entity'
 import { AuthInitial1747129600000 } from './migrations/1747129600000-AuthInitial'
 import { WhatsAppInitial1748000000000 } from './migrations/1748000000000-WhatsAppInitial'
+import { WhatsAppConversationPending1748100000000 } from './migrations/1748100000000-WhatsAppConversationPending'
 
 dotenv.config()
 
@@ -28,8 +30,13 @@ export const AppDataSource = new DataSource({
     WhatsAppConversation,
     WhatsAppMessage,
     WhatsAppMediaAsset,
+    WhatsAppConversationReadState,
   ],
-  migrations: [AuthInitial1747129600000, WhatsAppInitial1748000000000],
+  migrations: [
+    AuthInitial1747129600000,
+    WhatsAppInitial1748000000000,
+    WhatsAppConversationPending1748100000000,
+  ],
   synchronize: false,
   logging: process.env.NODE_ENV === 'development',
 })

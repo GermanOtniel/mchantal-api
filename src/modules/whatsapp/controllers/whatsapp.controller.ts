@@ -10,18 +10,43 @@ export class WhatsAppController {
   ) {}
 
   listConversations = async (
-    request: FastifyRequest<{ Querystring: { limit?: number; cursor?: string } }>,
+    request: FastifyRequest<{
+      Querystring: { limit?: number; cursor?: string; userId?: string }
+    }>,
     reply: FastifyReply
   ) => {
-    const limit = request.query.limit ?? 20
+    const limit = request.query.limit ?? 50
     const items = await this.conversations.listConversations(
       limit,
-      request.query.cursor
+      request.query.cursor,
+      request.user!.sub,
+      request.query.userId
     )
     const nextCursor =
       items.length === limit ? items[items.length - 1]?.id ?? null : null
 
     return reply.send({ items, nextCursor })
+  }
+
+  markConversationRead = async (
+    request: FastifyRequest<{ Params: { id: string } }>,
+    reply: FastifyReply
+  ) => {
+    try {
+      const result = await this.conversations.markConversationRead(
+        request.params.id,
+        request.user!.sub
+      )
+      return reply.send(result)
+    } catch (err) {
+      if (err instanceof HttpError) {
+        return reply.status(err.statusCode).send({
+          error: err.message,
+          code: err.code,
+        })
+      }
+      throw err
+    }
   }
 
   listMessages = async (
