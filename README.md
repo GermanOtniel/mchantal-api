@@ -16,6 +16,7 @@ Activar con `WHATSAPP_ENABLED=true` y credenciales en `.env` (ver `.env.example`
 | `META_APP_SECRET` | App Secret de Meta (firma `X-Hub-Signature-256`) |
 | `META_WHATSAPP_ACCESS_TOKEN` | Token permanente del número de prueba/producción |
 | `META_WHATSAPP_PHONE_NUMBER_ID` | Phone number ID en Meta Developer |
+| `REDIS_URL` | Opcional — pub/sub para SSE con varias réplicas del API (ej. `redis://localhost:6379`) |
 
 ### Rutas
 
@@ -25,6 +26,7 @@ Activar con `WHATSAPP_ENABLED=true` y credenciales en `.env` (ver `.env.example`
 | `POST` | `/v1/webhooks/whatsapp` | No — mensajes y estados entrantes |
 | `GET` | `/v1/whatsapp/conversations` | JWT |
 | `GET` | `/v1/whatsapp/conversations/:id/messages` | JWT |
+| `GET` | `/v1/whatsapp/events` | JWT — stream SSE de mensajes/conversaciones en tiempo real |
 | `POST` | `/v1/whatsapp/messages` | JWT — body: `{ conversationId?, toWaId?, text }` |
 
 ### Desarrollo local

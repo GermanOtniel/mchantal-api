@@ -9,6 +9,7 @@ import {
 import { createWhatsAppProvider } from '../../../shared/whatsapp/create-whatsapp-provider'
 import { HttpError } from '../../auth/http-error'
 import { WhatsAppController } from '../controllers/whatsapp.controller'
+import { RealtimeController } from '../controllers/realtime.controller'
 import {
   ConversationsListResponseSchema,
   ErrorResponseSchema,
@@ -20,13 +21,14 @@ import {
   ConversationIdParamsSchema,
   MarkConversationReadResponseSchema,
 } from '../schemas/whatsapp.schemas'
-import { ConversationService } from '../services/conversation.service'
+import { getConversationService } from '../create-conversation-service'
 
 export const whatsappPlugin: FastifyPluginAsyncTypebox = async (app) => {
   const waEnv = getWhatsAppEnv()
   const provider = createWhatsAppProvider(waEnv)
-  const conversations = new ConversationService()
+  const conversations = getConversationService()
   const controller = new WhatsAppController(conversations, provider)
+  const realtimeController = new RealtimeController()
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof HttpError) {
@@ -109,5 +111,13 @@ export const whatsappPlugin: FastifyPluginAsyncTypebox = async (app) => {
       },
     },
     controller.sendMessage
+  )
+
+  app.get(
+    '/events',
+    {
+      preHandler: requirePermission(PERMISSIONS.WHATSAPP_CONVERSATIONS_READ),
+    },
+    realtimeController.subscribe
   )
 }

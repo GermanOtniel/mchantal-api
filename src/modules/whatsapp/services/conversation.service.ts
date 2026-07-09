@@ -4,17 +4,35 @@ import type {
   NormalizedMessageStatus,
 } from '../../../shared/whatsapp/types/inbound.types'
 import type { WhatsAppProvider } from '../../../shared/whatsapp/whatsapp-provider.interface'
+import type { WhatsAppMessage } from '../../../entities/whatsapp/whatsapp-message.entity'
 import { HttpError } from '../../auth/http-error'
+import type { RealtimeBus } from '../realtime/realtime-bus'
+import type { MessageRealtimePayload } from '../realtime/types'
 import { WhatsAppContactRepository } from '../repositories/whatsapp-contact.repository'
 import { WhatsAppConversationReadStateRepository } from '../repositories/whatsapp-conversation-read-state.repository'
 import { WhatsAppConversationRepository } from '../repositories/whatsapp-conversation.repository'
 import { WhatsAppMessageRepository } from '../repositories/whatsapp-message.repository'
+
+function toMessagePayload(message: WhatsAppMessage): MessageRealtimePayload {
+  return {
+    id: message.id,
+    conversationId: message.conversationId,
+    direction: message.direction,
+    providerMessageId: message.providerMessageId,
+    type: message.type,
+    bodyText: message.bodyText,
+    status: message.status,
+    sentAt: message.sentAt.toISOString(),
+  }
+}
 
 export class ConversationService {
   private readonly contacts = new WhatsAppContactRepository()
   private readonly conversations = new WhatsAppConversationRepository()
   private readonly messages = new WhatsAppMessageRepository()
   private readonly readStates = new WhatsAppConversationReadStateRepository()
+
+  constructor(private readonly realtimeBus?: RealtimeBus) {}
 
   async processInboundEvents(events: NormalizedInboundEvent[]): Promise<void> {
     for (const event of events) {
@@ -24,6 +42,22 @@ export class ConversationService {
         await this.handleOutboundStatus(event.status)
       }
     }
+  }
+
+  private publishConversationUpdated(
+    conversationId: string,
+    lastMessageAt: Date,
+    lastMessageDirection: 'inbound' | 'outbound'
+  ): void {
+    this.realtimeBus?.publish({
+      type: 'conversation.updated',
+      payload: {
+        conversationId,
+        lastMessageAt: lastMessageAt.toISOString(),
+        lastMessageDirection,
+        needsReply: lastMessageDirection === 'inbound',
+      },
+    })
   }
 
   private async handleInboundMessage(message: NormalizedMessage): Promise<void> {
@@ -42,7 +76,7 @@ export class ConversationService {
       conversation = await this.conversations.createOpen(contact.id)
     }
 
-    await this.messages.create({
+    const savedMessage = await this.messages.create({
       conversationId: conversation.id,
       direction: 'inbound',
       providerMessageId: message.providerMessageId,
@@ -53,6 +87,19 @@ export class ConversationService {
     })
 
     await this.conversations.touchLastMessage(
+      conversation.id,
+      message.timestamp,
+      'inbound'
+    )
+
+    this.realtimeBus?.publish({
+      type: 'message.created',
+      payload: {
+        conversationId: conversation.id,
+        message: toMessagePayload(savedMessage),
+      },
+    })
+    this.publishConversationUpdated(
       conversation.id,
       message.timestamp,
       'inbound'
@@ -72,6 +119,15 @@ export class ConversationService {
       status.providerMessageId,
       status.status
     )
+
+    this.realtimeBus?.publish({
+      type: 'message.status_updated',
+      payload: {
+        conversationId: existing.conversationId,
+        providerMessageId: status.providerMessageId,
+        status: status.status,
+      },
+    })
   }
 
   async listConversations(
@@ -114,6 +170,11 @@ export class ConversationService {
       viewerUserId,
       new Date()
     )
+
+    this.realtimeBus?.publish({
+      type: 'conversation.read',
+      payload: { conversationId, userId: viewerUserId },
+    })
 
     return { unreadCount: 0 }
   }
@@ -185,7 +246,7 @@ export class ConversationService {
 
     const sentAt = new Date()
 
-    await this.messages.create({
+    const savedMessage = await this.messages.create({
       conversationId: conversation.id,
       direction: 'outbound',
       providerMessageId: result.providerMessageId,
@@ -201,9 +262,19 @@ export class ConversationService {
       'outbound'
     )
 
+    this.realtimeBus?.publish({
+      type: 'message.created',
+      payload: {
+        conversationId: conversation.id,
+        message: toMessagePayload(savedMessage),
+      },
+    })
+    this.publishConversationUpdated(conversation.id, sentAt, 'outbound')
+
     return {
       providerMessageId: result.providerMessageId,
       conversationId: conversation.id,
+      message: toMessagePayload(savedMessage),
     }
   }
 }

@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import { getWhatsAppEnv } from '../../../config/env'
 import { createWhatsAppProvider } from '../../../shared/whatsapp/create-whatsapp-provider'
 import { WebhookController } from '../controllers/webhook.controller'
-import { ConversationService } from '../services/conversation.service'
+import { getConversationService } from '../create-conversation-service'
 import { InboundWebhookService } from '../services/inbound-webhook.service'
 
 declare module 'fastify' {
@@ -14,7 +14,7 @@ declare module 'fastify' {
 export const webhookPlugin: FastifyPluginAsync = async (app) => {
   const waEnv = getWhatsAppEnv()
   const provider = createWhatsAppProvider(waEnv)
-  const conversations = new ConversationService()
+  const conversations = getConversationService()
   const inbound = new InboundWebhookService(provider, conversations)
   const controller = new WebhookController(inbound)
 
