@@ -2,6 +2,8 @@ import { createHmac, timingSafeEqual } from 'crypto'
 import type { WhatsAppEnv } from '../../../config/env'
 import type { NormalizedInboundEvent } from '../types/inbound.types'
 import type {
+  SendInteractiveButtonsInput,
+  SendInteractiveButtonsResult,
   SendTextMessageInput,
   SendTextMessageResult,
   WebhookSubscriptionQuery,
@@ -66,6 +68,57 @@ export class MetaWhatsAppProvider implements WhatsAppProvider {
 
     if (input.replyToProviderMessageId) {
       payload.context = { message_id: input.replyToProviderMessageId }
+    }
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.env.meta.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+
+    if (!res.ok) {
+      const errText = await res.text()
+      throw new Error(`Meta WhatsApp API error (${res.status}): ${errText}`)
+    }
+
+    const data = (await res.json()) as {
+      messages?: Array<{ id?: string }>
+    }
+
+    const providerMessageId = data.messages?.[0]?.id
+    if (!providerMessageId) {
+      throw new Error('Meta WhatsApp API did not return a message id')
+    }
+
+    return { providerMessageId }
+  }
+
+  async sendInteractiveButtons(
+    input: SendInteractiveButtonsInput
+  ): Promise<SendInteractiveButtonsResult> {
+    const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${this.env.meta.phoneNumberId}/messages`
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: input.toWaId,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: input.body },
+        action: {
+          buttons: input.buttons.slice(0, 3).map((button) => ({
+            type: 'reply',
+            reply: {
+              id: button.id,
+              title: button.title.slice(0, 20),
+            },
+          })),
+        },
+      },
     }
 
     const res = await fetch(url, {

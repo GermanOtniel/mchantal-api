@@ -61,6 +61,9 @@ export class WhatsAppMessage {
   @Column({ type: 'varchar', length: 20, default: 'pending' })
   status!: MessageDeliveryStatus
 
+  @Column({ type: 'jsonb', default: () => "'{}'" })
+  metadata!: Record<string, unknown>
+
   @Column({ type: 'timestamptz', name: 'sent_at' })
   sentAt!: Date
 

@@ -35,7 +35,7 @@ export class WhatsAppConversationRepository {
   async findById(id: string): Promise<WhatsAppConversation | null> {
     return this.repo.findOne({
       where: { id },
-      relations: { contact: true },
+      relations: { contact: true, assignee: true },
     })
   }
 
@@ -50,14 +50,27 @@ export class WhatsAppConversationRepository {
     )
   }
 
+  async setLeadAndAssignee(
+    conversationId: string,
+    leadId: string | null,
+    assigneeUserId: string | null
+  ): Promise<void> {
+    await this.repo.update(
+      { id: conversationId },
+      { leadId, assigneeUserId }
+    )
+  }
+
   async listPaginatedForViewer(
     limit: number,
     viewerUserId: string,
-    cursor?: string
+    cursor?: string,
+    assigneeUserId?: string
   ): Promise<ConversationListItem[]> {
     const qb = this.repo
       .createQueryBuilder('c')
       .innerJoinAndSelect('c.contact', 'contact')
+      .leftJoinAndSelect('c.assignee', 'assignee')
       .leftJoin(
         'whatsapp_conversation_read_states',
         'rs',
@@ -77,6 +90,10 @@ export class WhatsAppConversationRepository {
       .orderBy('c.lastMessageAt', 'DESC', 'NULLS LAST')
       .addOrderBy('c.createdAt', 'DESC')
       .take(limit)
+
+    if (assigneeUserId) {
+      qb.andWhere('c.assignee_user_id = :assigneeUserId', { assigneeUserId })
+    }
 
     if (cursor) {
       qb.andWhere('c.id < :cursor', { cursor })

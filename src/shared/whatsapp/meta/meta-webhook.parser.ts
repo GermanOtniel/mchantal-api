@@ -27,6 +27,11 @@ type MetaInboundMessage = {
   timestamp?: string
   type?: string
   text?: { body?: string }
+  interactive?: {
+    type?: string
+    button_reply?: { id?: string; title?: string }
+    list_reply?: { id?: string; title?: string }
+  }
   image?: { id?: string; caption?: string }
   audio?: { id?: string }
   document?: { id?: string; caption?: string; filename?: string }
@@ -60,6 +65,8 @@ function mapMessageType(type: string | undefined): NormalizedMessageType {
       return 'document'
     case 'video':
       return 'video'
+    case 'interactive':
+      return 'interactive'
     default:
       return 'unknown'
   }
@@ -74,9 +81,24 @@ function normalizeMessage(
   const type = mapMessageType(msg.type)
   let text: string | undefined
   let mediaProviderId: string | undefined
+  let interactiveReplyId: string | undefined
+  let interactiveReplyTitle: string | undefined
+  let interactiveType: 'button_reply' | 'list_reply' | undefined
 
   if (type === 'text') {
     text = msg.text?.body
+  } else if (type === 'interactive') {
+    if (msg.interactive?.type === 'button_reply') {
+      interactiveType = 'button_reply'
+      interactiveReplyId = msg.interactive.button_reply?.id
+      interactiveReplyTitle = msg.interactive.button_reply?.title
+      text = interactiveReplyTitle
+    } else if (msg.interactive?.type === 'list_reply') {
+      interactiveType = 'list_reply'
+      interactiveReplyId = msg.interactive.list_reply?.id
+      interactiveReplyTitle = msg.interactive.list_reply?.title
+      text = interactiveReplyTitle
+    }
   } else if (type === 'image') {
     mediaProviderId = msg.image?.id
     text = msg.image?.caption
@@ -98,6 +120,9 @@ function normalizeMessage(
     type,
     text,
     mediaProviderId,
+    interactiveReplyId,
+    interactiveReplyTitle,
+    interactiveType,
   }
 }
 

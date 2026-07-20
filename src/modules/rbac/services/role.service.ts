@@ -2,13 +2,14 @@ import { AppDataSource } from '../../../database/data-source'
 import { User } from '../../../entities/auth/user.entity'
 import { HttpError } from '../../auth/http-error'
 import { UserRepository } from '../../auth/repositories/user.repository'
-import { SUPER_ADMIN_ROLE_SLUG } from '../../../shared/rbac/permissions.catalog'
+import { SUPER_ADMIN_ROLE_SLUG, SYSTEM_ROLES } from '../../../shared/rbac/permissions.catalog'
 import {
   PermissionRepository,
   RoleRepository,
   UserRoleRepository,
 } from '../repositories/rbac.repository'
 import { PermissionService } from './permission.service'
+import { UserLeadProfileRepository } from '../../leads/repositories/user-lead-profile.repository'
 
 export type RoleWithPermissions = {
   id: string
@@ -197,6 +198,7 @@ export class UserRoleService {
   private readonly userRoleRepo = new UserRoleRepository()
   private readonly roleRepo = new RoleRepository()
   private readonly permissionRepo = new PermissionRepository()
+  private readonly leadProfiles = new UserLeadProfileRepository()
 
   constructor(private readonly permissionService: PermissionService) {}
 
@@ -265,6 +267,16 @@ export class UserRoleService {
     this.permissionService.invalidateCache(targetUserId)
 
     const updatedRoles = await this.permissionRepo.getRolesForUser(targetUserId)
+    const hasLeadExecutive = updatedRoles.some(
+      (role) => role.slug === SYSTEM_ROLES.LEAD_EXECUTIVE.slug
+    )
+    if (hasLeadExecutive) {
+      const existingProfile = await this.leadProfiles.findByUserId(targetUserId)
+      if (!existingProfile) {
+        await this.leadProfiles.upsert(targetUserId, {})
+      }
+    }
+
     return updatedRoles.map((r) => ({ id: r.id, name: r.name, slug: r.slug }))
   }
 }

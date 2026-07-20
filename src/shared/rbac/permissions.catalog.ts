@@ -3,6 +3,12 @@ export const PERMISSIONS = {
   WHATSAPP_MESSAGES_SEND: 'whatsapp.messages.send',
   ROLES_MANAGE: 'roles.manage',
   USERS_MANAGE: 'users.manage',
+  CAMPAIGNS_MANAGE: 'campaigns.manage',
+  LEADS_READ: 'leads.read',
+  LEADS_ASSIGNABLE: 'leads.assignable',
+  LEADS_INBOX_ASSIGNED: 'leads.inbox.assigned',
+  LEADS_REASSIGN: 'leads.reassign',
+  ANALYTICS_READ: 'analytics.read',
 } as const
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS]
@@ -36,6 +42,36 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     module: 'rbac',
     description: 'Asignar roles a usuarios',
   },
+  {
+    key: PERMISSIONS.CAMPAIGNS_MANAGE,
+    module: 'leads',
+    description: 'Crear y editar campañas de captura',
+  },
+  {
+    key: PERMISSIONS.LEADS_READ,
+    module: 'leads',
+    description: 'Ver capturas y leads del sistema',
+  },
+  {
+    key: PERMISSIONS.LEADS_ASSIGNABLE,
+    module: 'leads',
+    description: 'Puede recibir leads asignados automáticamente',
+  },
+  {
+    key: PERMISSIONS.LEADS_INBOX_ASSIGNED,
+    module: 'leads',
+    description: 'Ver en inbox solo conversaciones asignadas',
+  },
+  {
+    key: PERMISSIONS.LEADS_REASSIGN,
+    module: 'leads',
+    description: 'Reasignar leads y conversaciones a otros ejecutivos',
+  },
+  {
+    key: PERMISSIONS.ANALYTICS_READ,
+    module: 'analytics',
+    description: 'Ver dashboard analítico de leads',
+  },
 ]
 
 export const SYSTEM_ROLES = {
@@ -59,5 +95,16 @@ export const SYSTEM_ROLES = {
     slug: 'whatsapp-viewer',
     description: 'Solo ver conversaciones de WhatsApp',
     permissionKeys: [PERMISSIONS.WHATSAPP_CONVERSATIONS_READ],
+  },
+  LEAD_EXECUTIVE: {
+    name: 'Ejecutivo de Leads',
+    slug: 'lead-executive',
+    description: 'Recibe leads asignados y atiende conversaciones propias',
+    permissionKeys: [
+      PERMISSIONS.WHATSAPP_CONVERSATIONS_READ,
+      PERMISSIONS.WHATSAPP_MESSAGES_SEND,
+      PERMISSIONS.LEADS_ASSIGNABLE,
+      PERMISSIONS.LEADS_INBOX_ASSIGNED,
+    ],
   },
 } as const

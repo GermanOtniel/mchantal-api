@@ -12,6 +12,7 @@ export type CreateMessageData = {
   type: string
   bodyText: string | null
   mediaAssetId?: string | null
+  metadata?: Record<string, unknown>
   status: MessageDeliveryStatus
   sentAt: Date
 }
@@ -35,6 +36,7 @@ export class WhatsAppMessageRepository {
       type: data.type,
       bodyText: data.bodyText,
       mediaAssetId: data.mediaAssetId ?? null,
+      metadata: data.metadata ?? {},
       status: data.status,
       sentAt: data.sentAt,
     })

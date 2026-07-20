@@ -4,6 +4,7 @@ export type NormalizedMessageType =
   | 'audio'
   | 'document'
   | 'video'
+  | 'interactive'
   | 'unknown'
 
 export type NormalizedMessage = {
@@ -14,6 +15,9 @@ export type NormalizedMessage = {
   type: NormalizedMessageType
   text?: string
   mediaProviderId?: string
+  interactiveReplyId?: string
+  interactiveReplyTitle?: string
+  interactiveType?: 'button_reply' | 'list_reply'
 }
 
 export type NormalizedDeliveryStatus =

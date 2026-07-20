@@ -39,6 +39,8 @@ export type AppEnv = {
   refreshTokenDays: number
   passwordResetTokenMinutes: number
   frontendPasswordResetUrl: string
+  whatsappBusinessPhone: string | null
+  publicCaptureRateLimit: number
   whatsappEnabled: boolean
   smtp: {
     host: string
@@ -64,6 +66,11 @@ export function getEnv(): AppEnv {
     refreshTokenDays: optionalInt('REFRESH_TOKEN_DAYS', 30),
     passwordResetTokenMinutes: optionalInt('PASSWORD_RESET_TOKEN_MINUTES', 60),
     frontendPasswordResetUrl: required('FRONTEND_PASSWORD_RESET_URL'),
+    whatsappBusinessPhone: (() => {
+      const value = optional('WHATSAPP_BUSINESS_PHONE', '')
+      return value === '' ? null : value
+    })(),
+    publicCaptureRateLimit: optionalInt('PUBLIC_CAPTURE_RATE_LIMIT', 30),
     whatsappEnabled: optional('WHATSAPP_ENABLED', 'false') === 'true',
     smtp: {
       host: required('SMTP_HOST'),

@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
+import { PERMISSIONS } from '../../../shared/rbac/permissions.catalog'
 import { HttpError } from '../../auth/http-error'
 import type { WhatsAppProvider } from '../../../shared/whatsapp/whatsapp-provider.interface'
 import { ConversationService } from '../services/conversation.service'
@@ -16,11 +17,19 @@ export class WhatsAppController {
     reply: FastifyReply
   ) => {
     const limit = request.query.limit ?? 50
+    const permissions = request.permissions ?? new Set<string>()
+    const onlyAssigned =
+      permissions.has(PERMISSIONS.LEADS_INBOX_ASSIGNED) &&
+      !permissions.has(PERMISSIONS.LEADS_READ)
+    const assigneeFilter = onlyAssigned
+      ? request.user!.sub
+      : request.query.userId
+
     const items = await this.conversations.listConversations(
       limit,
       request.query.cursor,
       request.user!.sub,
-      request.query.userId
+      assigneeFilter
     )
     const nextCursor =
       items.length === limit ? items[items.length - 1]?.id ?? null : null

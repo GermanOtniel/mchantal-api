@@ -1,5 +1,7 @@
 import type { NormalizedInboundEvent } from './types/inbound.types'
 import type {
+  SendInteractiveButtonsInput,
+  SendInteractiveButtonsResult,
   SendTextMessageInput,
   SendTextMessageResult,
   WebhookSubscriptionQuery,
@@ -19,4 +21,8 @@ export interface WhatsAppProvider {
   parseInboundPayload(body: unknown): NormalizedInboundEvent[]
 
   sendTextMessage(input: SendTextMessageInput): Promise<SendTextMessageResult>
+
+  sendInteractiveButtons(
+    input: SendInteractiveButtonsInput
+  ): Promise<SendInteractiveButtonsResult>
 }

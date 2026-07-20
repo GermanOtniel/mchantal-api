@@ -107,3 +107,23 @@ export const ErrorResponseSchema = Type.Object({
   error: Type.String(),
   code: Type.String(),
 })
+
+export const UserLeadProfileResponseSchema = Type.Object({
+  userId: Type.String({ format: 'uuid' }),
+  segments: Type.Array(Type.String()),
+  isAcceptingLeads: Type.Boolean(),
+  maxActiveLeads: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
+  enabledCampaignIds: Type.Array(Type.String({ format: 'uuid' })),
+})
+
+export const UpdateUserLeadProfileBodySchema = Type.Object(
+  {
+    segments: Type.Optional(Type.Array(Type.String())),
+    isAcceptingLeads: Type.Optional(Type.Boolean()),
+    maxActiveLeads: Type.Optional(
+      Type.Union([Type.Integer({ minimum: 1 }), Type.Null()])
+    ),
+    enabledCampaignIds: Type.Optional(Type.Array(Type.String({ format: 'uuid' }))),
+  },
+  { additionalProperties: false }
+)

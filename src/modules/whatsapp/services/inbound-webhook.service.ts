@@ -32,6 +32,6 @@ export class InboundWebhookService {
     const events = this.provider.parseInboundPayload(body)
     if (events.length === 0) return
 
-    await this.conversations.processInboundEvents(events)
+    await this.conversations.processInboundEvents(events, this.provider)
   }
 }

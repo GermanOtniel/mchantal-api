@@ -1,9 +1,10 @@
+import type { WhatsAppProvider } from '../../../shared/whatsapp/whatsapp-provider.interface'
 import type {
   NormalizedInboundEvent,
   NormalizedMessage,
   NormalizedMessageStatus,
 } from '../../../shared/whatsapp/types/inbound.types'
-import type { WhatsAppProvider } from '../../../shared/whatsapp/whatsapp-provider.interface'
+import type { LeadFlowEngine } from '../../leads/services/lead-flow.engine'
 import type { WhatsAppMessage } from '../../../entities/whatsapp/whatsapp-message.entity'
 import { HttpError } from '../../auth/http-error'
 import type { RealtimeBus } from '../realtime/realtime-bus'
@@ -32,12 +33,26 @@ export class ConversationService {
   private readonly messages = new WhatsAppMessageRepository()
   private readonly readStates = new WhatsAppConversationReadStateRepository()
 
-  constructor(private readonly realtimeBus?: RealtimeBus) {}
+  constructor(
+    private readonly realtimeBus?: RealtimeBus,
+    private readonly leadFlowEngine?: LeadFlowEngine
+  ) {}
 
-  async processInboundEvents(events: NormalizedInboundEvent[]): Promise<void> {
+  async processInboundEvents(
+    events: NormalizedInboundEvent[],
+    provider?: WhatsAppProvider
+  ): Promise<void> {
     for (const event of events) {
       if (event.kind === 'message') {
-        await this.handleInboundMessage(event.message)
+        const ctx = await this.handleInboundMessage(event.message)
+        if (ctx && provider && this.leadFlowEngine) {
+          await this.leadFlowEngine.handleInbound(provider, {
+            conversationId: ctx.conversationId,
+            contactId: ctx.contactId,
+            waId: ctx.waId,
+            message: event.message,
+          })
+        }
       } else {
         await this.handleOutboundStatus(event.status)
       }
@@ -60,11 +75,15 @@ export class ConversationService {
     })
   }
 
-  private async handleInboundMessage(message: NormalizedMessage): Promise<void> {
+  private async handleInboundMessage(message: NormalizedMessage): Promise<{
+    conversationId: string
+    contactId: string
+    waId: string
+  } | null> {
     const existing = await this.messages.findByProviderMessageId(
       message.providerMessageId
     )
-    if (existing) return
+    if (existing) return null
 
     const contact = await this.contacts.upsert(
       message.waId,
@@ -76,12 +95,20 @@ export class ConversationService {
       conversation = await this.conversations.createOpen(contact.id)
     }
 
+    const messageType =
+      message.type === 'interactive' ? 'interactive' : message.type
+
     const savedMessage = await this.messages.create({
       conversationId: conversation.id,
       direction: 'inbound',
       providerMessageId: message.providerMessageId,
-      type: message.type,
+      type: messageType,
       bodyText: message.text ?? null,
+      metadata: {
+        interactiveReplyId: message.interactiveReplyId,
+        interactiveReplyTitle: message.interactiveReplyTitle,
+        interactiveType: message.interactiveType,
+      },
       status: 'delivered',
       sentAt: message.timestamp,
     })
@@ -104,6 +131,12 @@ export class ConversationService {
       message.timestamp,
       'inbound'
     )
+
+    return {
+      conversationId: conversation.id,
+      contactId: contact.id,
+      waId: contact.waId,
+    }
   }
 
   private async handleOutboundStatus(
@@ -134,19 +167,21 @@ export class ConversationService {
     limit: number,
     cursor: string | undefined,
     viewerUserId: string,
-    _assigneeUserId?: string
+    assigneeUserId?: string
   ) {
-    // _assigneeUserId reserved for future assignment-based filtering
     const rows = await this.conversations.listPaginatedForViewer(
       limit,
       viewerUserId,
-      cursor
+      cursor,
+      assigneeUserId
     )
 
     return rows.map((c) => ({
       id: c.id,
       status: c.status,
       leadId: c.leadId,
+      assigneeUserId: c.assigneeUserId,
+      assigneeName: c.assignee?.fullName ?? null,
       lastMessageAt: c.lastMessageAt?.toISOString() ?? null,
       lastMessageDirection: c.lastMessageDirection,
       needsReply: c.lastMessageDirection === 'inbound',

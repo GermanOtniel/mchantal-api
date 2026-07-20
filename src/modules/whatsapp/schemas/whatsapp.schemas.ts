@@ -14,6 +14,8 @@ export const ConversationItemSchema = Type.Object({
   id: Type.String({ format: 'uuid' }),
   status: Type.Union([Type.Literal('open'), Type.Literal('closed')]),
   leadId: Type.Union([Type.String({ format: 'uuid' }), Type.Null()]),
+  assigneeUserId: Type.Union([Type.String({ format: 'uuid' }), Type.Null()]),
+  assigneeName: Type.Union([Type.String(), Type.Null()]),
   lastMessageAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
   lastMessageDirection: Type.Union([MessageDirectionSchema, Type.Null()]),
   needsReply: Type.Boolean(),

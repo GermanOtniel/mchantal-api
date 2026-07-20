@@ -8,6 +8,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm'
+import { User } from '../auth/user.entity'
 import { WhatsAppContact } from './whatsapp-contact.entity'
 import { WhatsAppMessage, type MessageDirection } from './whatsapp-message.entity'
 
@@ -32,6 +33,13 @@ export class WhatsAppConversation {
 
   @Column({ type: 'uuid', nullable: true, name: 'lead_id' })
   leadId!: string | null
+
+  @Column({ type: 'uuid', nullable: true, name: 'assignee_user_id' })
+  assigneeUserId!: string | null
+
+  @ManyToOne(() => User, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'assignee_user_id' })
+  assignee?: User | null
 
   @Column({ type: 'timestamptz', nullable: true, name: 'last_message_at' })
   lastMessageAt!: Date | null

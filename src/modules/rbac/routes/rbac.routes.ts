@@ -18,18 +18,27 @@ import {
   SetRolePermissionsBodySchema,
   SetUserRolesBodySchema,
   UpdateRoleBodySchema,
+  UpdateUserLeadProfileBodySchema,
   UserIdParamsSchema,
+  UserLeadProfileResponseSchema,
   UserRolesResponseSchema,
   UsersListResponseSchema,
 } from '../schemas/rbac.schemas'
 import { PermissionService } from '../services/permission.service'
 import { RoleService, UserRoleService } from '../services/role.service'
+import { UserLeadProfileService } from '../../leads/services/user-lead-profile.service'
 
 export const rbacPlugin: FastifyPluginAsyncTypebox = async (app) => {
   const permissionService = new PermissionService()
   const roleService = new RoleService(permissionService)
   const userRoleService = new UserRoleService(permissionService)
-  const controller = new RbacController(permissionService, roleService, userRoleService)
+  const leadProfileService = new UserLeadProfileService()
+  const controller = new RbacController(
+    permissionService,
+    roleService,
+    userRoleService,
+    leadProfileService
+  )
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof HttpError) {
@@ -213,5 +222,41 @@ export const rbacPlugin: FastifyPluginAsyncTypebox = async (app) => {
       },
     },
     controller.setUserRoles
+  )
+
+  app.get(
+    '/users/:id/lead-profile',
+    {
+      preHandler: requirePermission(PERMISSIONS.USERS_MANAGE),
+      schema: {
+        params: UserIdParamsSchema,
+        response: {
+          200: UserLeadProfileResponseSchema,
+          401: ErrorResponseSchema,
+          403: ErrorResponseSchema,
+          404: ErrorResponseSchema,
+        },
+      },
+    },
+    controller.getUserLeadProfile
+  )
+
+  app.put(
+    '/users/:id/lead-profile',
+    {
+      preHandler: requirePermission(PERMISSIONS.USERS_MANAGE),
+      schema: {
+        params: UserIdParamsSchema,
+        body: UpdateUserLeadProfileBodySchema,
+        response: {
+          200: UserLeadProfileResponseSchema,
+          400: ErrorResponseSchema,
+          401: ErrorResponseSchema,
+          403: ErrorResponseSchema,
+          404: ErrorResponseSchema,
+        },
+      },
+    },
+    controller.updateUserLeadProfile
   )
 }

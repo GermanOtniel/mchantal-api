@@ -4,12 +4,14 @@ import { HttpError } from '../../auth/http-error'
 import { SUPER_ADMIN_ROLE_SLUG } from '../../../shared/rbac/permissions.catalog'
 import type { PermissionService } from '../services/permission.service'
 import type { RoleService, UserRoleService } from '../services/role.service'
+import type { UserLeadProfileService } from '../../leads/services/user-lead-profile.service'
 import {
   CreateRoleBodySchema,
   RoleIdParamsSchema,
   SetRolePermissionsBodySchema,
   SetUserRolesBodySchema,
   UpdateRoleBodySchema,
+  UpdateUserLeadProfileBodySchema,
   UserIdParamsSchema,
 } from '../schemas/rbac.schemas'
 
@@ -27,7 +29,8 @@ export class RbacController {
   constructor(
     private readonly permissionService: PermissionService,
     private readonly roleService: RoleService,
-    private readonly userRoleService: UserRoleService
+    private readonly userRoleService: UserRoleService,
+    private readonly leadProfileService: UserLeadProfileService
   ) {}
 
   listPermissions = async (_request: FastifyRequest, reply: FastifyReply) => {
@@ -168,6 +171,36 @@ export class RbacController {
         request.user.sub
       )
       return reply.send({ roles })
+    } catch (e) {
+      return handleError(reply, e)
+    }
+  }
+
+  getUserLeadProfile = async (
+    request: FastifyRequest<{ Params: Static<typeof UserIdParamsSchema> }>,
+    reply: FastifyReply
+  ) => {
+    try {
+      const profile = await this.leadProfileService.getProfile(request.params.id)
+      return reply.send(profile)
+    } catch (e) {
+      return handleError(reply, e)
+    }
+  }
+
+  updateUserLeadProfile = async (
+    request: FastifyRequest<{
+      Params: Static<typeof UserIdParamsSchema>
+      Body: Static<typeof UpdateUserLeadProfileBodySchema>
+    }>,
+    reply: FastifyReply
+  ) => {
+    try {
+      const profile = await this.leadProfileService.updateProfile(
+        request.params.id,
+        request.body
+      )
+      return reply.send(profile)
     } catch (e) {
       return handleError(reply, e)
     }
