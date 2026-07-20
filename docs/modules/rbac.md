@@ -18,11 +18,11 @@ Control de acceso basado en roles y permisos, con **catálogo de permisos defini
 
 1. **Catálogo en código** (`shared/rbac/permissions.catalog.ts`): `PERMISSIONS` (claves string) + `PERMISSION_CATALOG` (con `module` y `description` por permiso) + `SYSTEM_ROLES` (Super Admin, Agente WhatsApp, Visor WhatsApp, Ejecutivo de Leads).
 2. **Seed en migración** (`1748200000000-RbacInitial.ts`): inserta los permisos del catálogo y los roles de sistema con sus permisos.
-3. **Cache en proceso:** `shared/rbac/permission-cache.ts` cachea permisos efectivos por usuario (invalidado al cambiar roles/permisos).
+3. **Cache en proceso (TTL 60s):** `shared/rbac/permission-cache.ts` cachea permisos efectivos por usuario en memoria del proceso. Se invalida **dentro del mismo proceso** al cambiar roles/permisos por la API (`setUserRoles`, `setRolePermissions`, etc.). **No se invalida entre procesos**: cambios out-of-band (script CLI, SQL directo) dejan el cache stale hasta que expira el TTL (ver *Nota operativa* abajo).
 4. **Hooks** (`shared/rbac/rbac.hooks.ts`):
    - `loadPermissionsHook` (preHandler) — resuelve `permissions[]` y `roles[]` del usuario y los adjunta al request.
    - `requirePermission(key)` / `requireAnyPermission(...keys)` — 403 si falta.
-5. **Asignación de roles** vía CLI idempotente: `npm run rbac:assign-role -- <slug> <email>` (`database/assign-role.ts`).
+5. **Asignación de roles** vía CLI idempotente: `npm run rbac:assign-role -- <slug> <email>` (`database/assign-role.ts`). Corre en su propio proceso: actualiza la DB e invalida el cache **solo de ese proceso efímero**, no del API server en ejecución.
 
 ## Catálogo de permisos
 
@@ -101,5 +101,16 @@ Prefijo `/v1/rbac`. Todas requieren JWT.
 - RBAC custom vs. librería — [ADR-001](../decisions/ADR-001-rbac-custom-en-lugar-de-libreria.md).
 
 ## Pendientes / Notas
+
+### Nota operativa: stale de permisos tras cambios out-of-band (TTL 60s)
+
+El cache de permisos (`permission-cache.ts`) vive en memoria del proceso del API y expira a los **60s**. La invalidación funciona **solo dentro del proceso** que muta:
+
+- Cambios hechos **por la API** (UI del CRM → endpoints `/v1/rbac/...`): el API invalida su propio cache → efecto inmediato. ✅
+- Cambios **out-of-band**: `npm run rbac:assign-role` (CLI), SQL directo, restores de DB. El CLI invalida el cache de **su propio proceso efímero**, no del API server en ejecución. El API sigue sirviendo permisos stale hasta que el TTL expira. ⚠️
+
+**Síntoma típico (setup de ambiente nuevo):** te logueas antes de asignar el rol → el API cachea `permissions: []` para tu usuario. Corres `rbac:assign-role super-admin ...`. Recargas el CRM dentro de los 60s → `/me` devuelve permisos vacíos → el CRM muestra "Sin acceso asignado" y el sidebar no pinta secciones.
+
+**Resolución aceptada (decisión consciente):** no tocar código. El CLI se corre muy rara vez y 60s es una espera aceptable. Opciones si se necesita efecto inmediato: (a) **reiniciar el API server** después del CLI (cache arranca limpio), o (b) **esperar >60s y recargar sesión** en el CRM (logout + login). Si en el futuro se escala a múltiples réplicas del API, reemplazar el cache in-memory por Redis con invalidación pub/sub (mismo patrón que los eventos SSE).
 
 - El catálogo se duplica (string literals) entre backend y CRM. Si se desincronizan, los permisos del CRM fallarían silenciosamente. Considerar generar desde una sola fuente.
