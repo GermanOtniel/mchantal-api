@@ -22,7 +22,10 @@ export async function buildApp() {
       : true,
   }).withTypeProvider<TypeBoxTypeProvider>()
 
-  await app.register(cors)
+  await app.register(cors, {
+    origin: true,
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'HEAD', 'OPTIONS'],
+  })
   await app.register(helmet)
   await app.register(authPlugin, { prefix: '/v1/auth' })
   await app.register(campaignsPlugin, { prefix: '/v1/campaigns' })
