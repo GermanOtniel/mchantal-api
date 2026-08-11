@@ -201,3 +201,47 @@ describe('validateEntryMessage', () => {
     expect(codes(validateEntryMessage(''))).toContain('ENTRY_MESSAGE_EMPTY')
   })
 })
+describe('validateFlowDefinition — entryNodeId', () => {
+  it('entryNodeId que apunta a un interactive_buttons es válido', () => {
+    const flow = {
+      entryNodeId: 'welcome',
+      nodes: {
+        welcome: { id: 'welcome', type: 'interactive_buttons', body: '¿?', buttons: [{ id: 'b1', title: 'X' }], transitions: { b1: 'closing' }, onFreeText: 'reprompt' },
+        closing: { id: 'closing', type: 'text_message', body: 'gracias' },
+      },
+    }
+    expect(validateFlowDefinition(flow)).toEqual([])
+  })
+
+  it('entryNodeId que apunta a un nodo inexistente → ENTRY_NODE_INVALID', () => {
+    const flow = {
+      entryNodeId: 'nope',
+      nodes: {
+        welcome: { id: 'welcome', type: 'interactive_buttons', body: '¿?', buttons: [{ id: 'b1', title: 'X' }], transitions: { b1: 'closing' }, onFreeText: 'reprompt' },
+        closing: { id: 'closing', type: 'text_message', body: 'gracias' },
+      },
+    }
+    expect(codes(validateFlowDefinition(flow))).toContain('ENTRY_NODE_INVALID')
+  })
+
+  it('entryNodeId que apunta a un text_message → ENTRY_NODE_INVALID', () => {
+    const flow = {
+      entryNodeId: 'closing',
+      nodes: {
+        welcome: { id: 'welcome', type: 'interactive_buttons', body: '¿?', buttons: [{ id: 'b1', title: 'X' }], transitions: { b1: 'closing' }, onFreeText: 'reprompt' },
+        closing: { id: 'closing', type: 'text_message', body: 'gracias' },
+      },
+    }
+    expect(codes(validateFlowDefinition(flow))).toContain('ENTRY_NODE_INVALID')
+  })
+
+  it('sin entryNodeId es válido (fallback a welcome/primer interactive)', () => {
+    const flow = {
+      nodes: {
+        welcome: { id: 'welcome', type: 'interactive_buttons', body: '¿?', buttons: [{ id: 'b1', title: 'X' }], transitions: { b1: 'closing' }, onFreeText: 'reprompt' },
+        closing: { id: 'closing', type: 'text_message', body: 'gracias' },
+      },
+    }
+    expect(validateFlowDefinition(flow)).toEqual([])
+  })
+})

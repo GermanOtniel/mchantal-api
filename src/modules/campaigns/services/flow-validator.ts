@@ -37,6 +37,14 @@ export function validateFlowDefinition(flow: unknown): ValidationIssue[] {
   const nodeIds = new Set(Object.keys(nodes))
   const entries = Object.entries(nodes) as [string, unknown][]
 
+  const entryNodeIdRaw = (flow as { entryNodeId?: unknown } | null)?.entryNodeId
+  if (entryNodeIdRaw !== undefined) {
+    const target = nodes[entryNodeIdRaw as string] as { type?: string } | undefined
+    if (!target || target.type !== 'interactive_buttons') {
+      issues.push(issue('flow.entryNodeId', 'ENTRY_NODE_INVALID', 'entryNodeId no apunta a un nodo interactive_buttons existente.'))
+    }
+  }
+
   for (const [key, raw] of entries) {
     const base = `flow.nodes.${key}`
     const node = raw as { id?: unknown; type?: unknown }
@@ -55,16 +63,28 @@ export function validateFlowDefinition(flow: unknown): ValidationIssue[] {
     }
   }
 
-  const entry = (Object.values(nodes) as { type?: string }[]).find(
-    (n) => isPlainObject(n) && n.type === 'interactive_buttons'
-  )
+  const entry = resolveEntry(nodes, entryNodeIdRaw as string | undefined)
   if (!entry) {
     issues.push(issue('flow.nodes', 'ENTRY_NODE_MISSING', 'Debe existir al menos un nodo interactive_buttons (entrada).'))
   } else {
-    detectCycles(nodes as Record<string, unknown>, (entry as { id: string }).id, issues)
+    detectCycles(nodes as Record<string, unknown>, entry, issues)
   }
 
   return issues
+}
+
+/** Resuelve el nodo de entrada: entryNodeId (válido) → 'welcome' (si es interactive) → primer interactive. */
+function resolveEntry(nodes: Record<string, unknown>, entryNodeId?: string): string | null {
+  if (entryNodeId) {
+    const n = nodes[entryNodeId] as { type?: string } | undefined
+    if (n && n.type === 'interactive_buttons') return entryNodeId
+  }
+  const welcome = nodes['welcome'] as { type?: string } | undefined
+  if (welcome && welcome.type === 'interactive_buttons') return 'welcome'
+  const first = (Object.values(nodes) as { id?: string; type?: string }[]).find(
+    (n) => isPlainObject(n) && n.type === 'interactive_buttons'
+  )
+  return first?.id ?? null
 }
 
 function validateInteractive(

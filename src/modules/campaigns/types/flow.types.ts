@@ -18,6 +18,6 @@ export type TextMessageNode = {
 
 export type FlowNode = InteractiveButtonsNode | TextMessageNode
 
-export type FlowDefinition = { nodes: Record<string, FlowNode> }
+export type FlowDefinition = { nodes: Record<string, FlowNode>; entryNodeId?: string }
 
 export type ValidationIssue = { field: string; code: string; message: string }

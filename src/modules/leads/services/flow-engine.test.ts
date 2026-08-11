@@ -294,3 +294,44 @@ describe('FlowEngine — ignorado', () => {
     expect(sent).toHaveLength(0)
   })
 })
+describe('FlowEngine — resolución de entrada (jsonb reordena claves)', () => {
+  // Flujo donde 'q' aparece ANTES que 'welcome' en orden de iteración (como hace jsonb).
+  function reorderedFlow(entryNodeId?: string) {
+    return {
+      entryNodeId,
+      nodes: {
+        q: { id: 'q', type: 'interactive_buttons', body: 'Q BODY', buttons: [{ id: 'b1', title: 'x' }], transitions: { b1: 'closing' }, onFreeText: 'reprompt' },
+        welcome: { id: 'welcome', type: 'interactive_buttons', body: 'WELCOME BODY', buttons: [{ id: 'b1', title: 'go' }], transitions: { b1: 'q' }, onFreeText: 'reprompt' },
+        closing: { id: 'closing', type: 'text_message', body: 'bye' },
+      },
+    } as unknown as FlowDefinition
+  }
+
+  async function enroll(flow: unknown) {
+    const capture = { id: 'cap1', folio: FOLIO, campaignId: 'camp1', campaign: { id: 'camp1', flowDefinition: flow as never }, status: 'pending' as const, campaignLeadId: null }
+    const deps = makeDeps({
+      captures: { findPendingByFolio: vi.fn(async () => capture), markMatched: vi.fn(async () => {}) },
+      campaignLeads: {
+        findByContactAndCampaign: vi.fn(async () => null),
+        create: vi.fn(async (d) => ({ id: 'lead1', contactId: d.contactId, campaignId: d.campaignId, campaign: capture.campaign, context: d.context })),
+        findById: vi.fn(async () => null),
+        save: vi.fn(async (l) => l),
+      },
+    })
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: `mi folio es ${FOLIO}` }) }))
+    return sender
+  }
+
+  it('con entryNodeId=welcome arranca en welcome (no en q, aunque q itere primero)', async () => {
+    const sender = await enroll(reorderedFlow('welcome'))
+    expect(sender.sendInteractiveButtons).toHaveBeenCalledWith(expect.objectContaining({ body: 'WELCOME BODY' }))
+    expect(sender.sendInteractiveButtons).not.toHaveBeenCalledWith(expect.objectContaining({ body: 'Q BODY' }))
+  })
+
+  it('sin entryNodeId, cae al fallback welcome (id) y arranca en welcome', async () => {
+    const sender = await enroll(reorderedFlow(undefined))
+    expect(sender.sendInteractiveButtons).toHaveBeenCalledWith(expect.objectContaining({ body: 'WELCOME BODY' }))
+  })
+})

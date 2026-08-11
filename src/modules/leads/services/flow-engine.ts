@@ -200,7 +200,13 @@ function extractFolio(message: NormalizedMessage): string | null {
 }
 
 function findFirstInteractiveNode(flow: FlowDefinition): string | null {
-  const node = Object.values(flow.nodes ?? {}).find((n) => n.type === 'interactive_buttons')
+  const nodes = flow.nodes ?? {}
+  if (flow.entryNodeId && nodes[flow.entryNodeId]?.type === 'interactive_buttons') {
+    return flow.entryNodeId
+  }
+  const welcome = nodes['welcome']
+  if (welcome && welcome.type === 'interactive_buttons') return 'welcome'
+  const node = Object.values(nodes).find((n) => n.type === 'interactive_buttons')
   return node?.id ?? null
 }
 
