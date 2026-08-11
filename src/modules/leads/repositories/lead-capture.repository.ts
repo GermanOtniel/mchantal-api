@@ -36,4 +36,8 @@ export class LeadCaptureRepository implements LeadCaptureRepositoryPort {
   async markMatched(captureId: string, leadId: string): Promise<void> {
     await this.repo.update({ id: captureId }, { status: 'matched', campaignLeadId: leadId })
   }
+
+  async create(data: { folio: string; campaignId: string; status: 'pending' }): Promise<LeadCapture> {
+    return this.repo.save(this.repo.create({ folio: data.folio, campaignId: data.campaignId, status: data.status }))
+  }
 }

@@ -10,9 +10,7 @@ import type {
   InboundFlowContext,
   LeadFlowStateData,
 } from '../types/leads.types'
-
-/** Folio generado por folio.service (traído en step 4): MC- + 5 chars del charset. */
-export const FOLIO_REGEX = /\bMC-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{5}\b/
+import { FOLIO_REGEX } from './folio.service'
 
 export class FlowEngine {
   constructor(private readonly deps: FlowEngineDeps) {}

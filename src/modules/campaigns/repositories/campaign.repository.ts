@@ -38,4 +38,8 @@ export class CampaignRepository implements CampaignRepositoryPort {
     if (!found) return false
     return found.id !== exceptId
   }
+
+  async findBySlug(slug: string): Promise<Campaign | null> {
+    return this.repo.findOne({ where: { slug } })
+  }
 }
