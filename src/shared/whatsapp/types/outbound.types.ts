@@ -17,3 +17,9 @@ export type SendInteractiveButtonsInput = {
 export type SendInteractiveButtonsResult = {
   providerMessageId: string
 }
+
+export type WebhookSubscriptionQuery = {
+  mode?: string
+  verifyToken?: string
+  challenge?: string
+}

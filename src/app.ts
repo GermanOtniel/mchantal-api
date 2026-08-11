@@ -5,6 +5,7 @@ import Fastify from 'fastify'
 import { getEnv } from './config/env'
 import { authPlugin } from './modules/auth/routes/auth.routes'
 import { campaignsPlugin } from './modules/campaigns/routes/campaigns.routes'
+import { webhookPlugin } from './modules/whatsapp/routes/webhook.routes'
 
 export async function buildApp() {
   const env = getEnv()
@@ -24,6 +25,7 @@ export async function buildApp() {
   await app.register(helmet)
   await app.register(authPlugin, { prefix: '/v1/auth' })
   await app.register(campaignsPlugin, { prefix: '/v1/campaigns' })
+  await app.register(webhookPlugin)
 
   app.get('/health', async () => {
     return { status: 'ok', timestamp: new Date().toISOString() }

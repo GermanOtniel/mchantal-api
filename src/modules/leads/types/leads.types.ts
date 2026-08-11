@@ -110,3 +110,40 @@ export type InboundFlowContext = {
   waId: string
   message: NormalizedMessage
 }
+
+// ── Puertos anchos (para ConversationService: dedupe, upsert contacto, status) ──
+
+export type ContactData = { id: string; waId: string; profileName: string | null }
+
+export interface WhatsAppContactRepositoryPort {
+  upsert(waId: string, profileName?: string | null): Promise<ContactData>
+}
+
+export interface WhatsAppConversationRepositoryWidePort
+  extends WhatsAppConversationRepositoryPort {
+  findOpenByContactId(contactId: string): Promise<ConversationData | null>
+  createOpen(contactId: string): Promise<ConversationData>
+}
+
+export type MessageData = {
+  id: string
+  conversationId: string
+  direction: 'inbound' | 'outbound'
+  providerMessageId: string
+  type: string
+  bodyText: string | null
+  status: string
+  metadata: Record<string, unknown>
+  sentAt: Date
+}
+
+export interface WhatsAppMessageRepositoryWidePort
+  extends WhatsAppMessageRepositoryPort {
+  findByProviderMessageId(providerMessageId: string): Promise<MessageData | null>
+  updateStatus(providerMessageId: string, status: string): Promise<void>
+  updateStatusAndMetadata(
+    providerMessageId: string,
+    status: string,
+    metadata: Record<string, unknown>
+  ): Promise<void>
+}
