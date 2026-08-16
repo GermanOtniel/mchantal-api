@@ -54,6 +54,6 @@ export const webhookPlugin: FastifyPluginAsync = async (app) => {
     }
   )
 
-  app.get('/whatsapp', controller.verify)
-  app.post('/whatsapp', controller.receive)
+  app.get('/v1/webhooks/whatsapp', controller.verify)
+  app.post('/v1/webhooks/whatsapp', controller.receive)
 }
