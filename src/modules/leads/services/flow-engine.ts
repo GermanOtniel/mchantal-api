@@ -3,7 +3,9 @@ import type { NormalizedMessage } from '../../../shared/whatsapp/types/inbound.t
 import type {
   FlowDefinition,
   InteractiveButtonsNode,
+  TextInputNode,
 } from '../../campaigns/types/flow.types'
+import type { AssignmentDirective } from '../../executives/types/assignment.types'
 import type {
   CampaignLeadData,
   FlowEngineDeps,
@@ -11,6 +13,7 @@ import type {
   LeadFlowStateData,
 } from '../types/leads.types'
 import { FOLIO_REGEX } from './folio.service'
+import { classify } from '../../matcher-dictionaries/services/classifier'
 
 export class FlowEngine {
   constructor(private readonly deps: FlowEngineDeps) {}
@@ -102,6 +105,78 @@ export class FlowEngine {
       ) {
         await this.executeNode(sender, ctx, lead, flowState, flowState.currentNodeId)
       }
+      return
+    }
+
+    if (currentNode.type === 'text_input') {
+      await this.processTextInput(sender, ctx, lead, flowState, currentNode)
+    }
+  }
+
+  private async processTextInput(
+    sender: WhatsAppSender,
+    ctx: InboundFlowContext,
+    lead: CampaignLeadData,
+    flowState: LeadFlowStateData,
+    node: TextInputNode
+  ): Promise<void> {
+    // Sólo texto libre dispara clasificación; cualquier otra cosa → reprompt
+    if (ctx.message.type !== 'text' || !ctx.message.text) {
+      await this.repromptOrFallback(sender, ctx, lead, flowState, node)
+      return
+    }
+
+    const dictionary = await this.deps.dictionaries.findById(node.matcher.dictionaryId)
+    if (!dictionary) return
+
+    const result = classify(ctx.message.text, dictionary.categories)
+    if (!result) {
+      await this.repromptOrFallback(sender, ctx, lead, flowState, node)
+      return
+    }
+
+    // Guarda la respuesta detectada en answers[storeAs]
+    const prevAnswers = (flowState.context.answers as Record<string, string> | undefined) ?? {}
+    const answers = { ...prevAnswers, [node.storeAs]: result.categoryId }
+    flowState.context = { ...flowState.context, answers }
+    await this.deps.flowStates.save(flowState)
+
+    // Resuelve la directiva de asignación (override por categoría gana al default)
+    const directive: AssignmentDirective | undefined =
+      node.assignmentOverrides?.[result.categoryId] ?? node.assignment
+    if (directive) {
+      const assignmentResult = await this.deps.assignment.resolve(directive, flowState.context)
+      lead.assignmentMode = assignmentResult.mode
+      lead.assignedExecutiveId = assignmentResult.executiveId
+      lead.assignedAt = new Date()
+      await this.deps.campaignLeads.save(lead)
+    }
+
+    // Avanza a la transición de la categoría (si la hay)
+    const target = node.transitions[result.categoryId]
+    if (target) {
+      await this.executeNode(sender, ctx, lead, flowState, target)
+    } else {
+      // Sin transición: el text_input es terminal → completa el flujo
+      flowState.status = 'completed'
+      flowState.completedAt = new Date()
+      await this.deps.flowStates.save(flowState)
+    }
+  }
+
+  private async repromptOrFallback(
+    sender: WhatsAppSender,
+    ctx: InboundFlowContext,
+    lead: CampaignLeadData,
+    flowState: LeadFlowStateData,
+    node: TextInputNode
+  ): Promise<void> {
+    const fallback = node.fallback
+    if (typeof fallback === 'object' && fallback !== null) {
+      await this.executeNode(sender, ctx, lead, flowState, fallback.transition)
+    } else {
+      // 'reprompt' o undefined → reenvía el prompt
+      await this.executeNode(sender, ctx, lead, flowState, flowState.currentNodeId)
     }
   }
 

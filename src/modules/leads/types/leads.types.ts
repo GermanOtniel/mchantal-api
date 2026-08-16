@@ -1,5 +1,7 @@
 import type { FlowDefinition } from '../../campaigns/types/flow.types'
 import type { NormalizedMessage } from '../../../shared/whatsapp/types/inbound.types'
+import type { AssignmentDirective, AssignmentResult, LeadAssignmentContext } from '../../executives/types/assignment.types'
+import type { MatcherDictionaryData } from '../../matcher-dictionaries/types/dictionary.types'
 
 export type LeadCaptureData = {
   id: string
@@ -21,6 +23,9 @@ export type CampaignLeadData = {
   campaignId: string
   campaign: { id: string; flowDefinition: FlowDefinition }
   context: CampaignLeadContext
+  assignmentMode?: 'executive' | 'pool' | 'manual' | null
+  assignedExecutiveId?: string | null
+  assignedAt?: Date | null
 }
 
 export type LeadFlowStateData = {
@@ -96,12 +101,22 @@ export interface WhatsAppMessageRepositoryPort {
   create(data: MessageCreateData): Promise<unknown>
 }
 
+export interface MatcherDictionaryResolverPort {
+  findById(id: string): Promise<MatcherDictionaryData | null>
+}
+
+export interface AssignmentResolverPort {
+  resolve(directive: AssignmentDirective, leadContext: LeadAssignmentContext): Promise<AssignmentResult>
+}
+
 export type FlowEngineDeps = {
   captures: LeadCaptureRepositoryPort
   campaignLeads: CampaignLeadRepositoryPort
   flowStates: LeadFlowStateRepositoryPort
   conversations: WhatsAppConversationRepositoryPort
   messages: WhatsAppMessageRepositoryPort
+  dictionaries: MatcherDictionaryResolverPort
+  assignment: AssignmentResolverPort
 }
 
 export type InboundFlowContext = {

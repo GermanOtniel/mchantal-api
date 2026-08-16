@@ -96,6 +96,8 @@ function makeDeps(over: Partial<FlowEngineDeps> = {}): FlowEngineDeps {
     },
     conversations: { findById: vi.fn(async () => null), setLead: vi.fn(async () => {}) },
     messages: { create: vi.fn(async () => ({})) },
+    dictionaries: { findById: vi.fn(async () => null) },
+    assignment: { resolve: vi.fn(async () => ({ mode: 'manual', executiveId: null })) },
     ...over,
   }
 }
@@ -333,5 +335,145 @@ describe('FlowEngine — resolución de entrada (jsonb reordena claves)', () => 
   it('sin entryNodeId, cae al fallback welcome (id) y arranca en welcome', async () => {
     const sender = await enroll(reorderedFlow(undefined))
     expect(sender.sendInteractiveButtons).toHaveBeenCalledWith(expect.objectContaining({ body: 'WELCOME BODY' }))
+  })
+})
+
+// ── Flujo con nodo text_input ──
+function textInputFlow(): FlowDefinition {
+  return {
+    nodes: {
+      welcome: {
+        id: 'welcome',
+        type: 'interactive_buttons',
+        body: 'Hola {{folio}}, ¿qué te trae aquí?',
+        buttons: [{ id: 'cotizar', title: 'Cotizar' }],
+        transitions: { cotizar: 'ask_estado' },
+        onFreeText: 'reprompt',
+      },
+      ask_estado: {
+        id: 'ask_estado',
+        type: 'text_input',
+        body: '¿De qué estado nos escribes?',
+        storeAs: 'estado',
+        matcher: { dictionaryId: 'dic1' },
+        transitions: { jalisco: 'closing', nuevo_leon: 'closing' },
+        assignment: { mode: 'pool', selector: { kind: 'coverage', attribute: 'states', value: '{{answers.estado}}' }, strategy: 'round_robin' },
+      },
+      closing: { id: 'closing', type: 'text_message', body: '¡Gracias {{folio}}! Te contactaremos.' },
+    },
+  }
+}
+
+function leadAndState(flow: FlowDefinition, currentNodeId: string) {
+  const lead: CampaignLeadData = {
+    id: 'lead1', contactId: 'ct1', campaignId: 'camp1',
+    campaign: { id: 'camp1', flowDefinition: flow },
+    context: { folio: FOLIO, answers: {} },
+  }
+  const state: LeadFlowStateData = {
+    id: 'fs1', campaignLeadId: 'lead1', currentNodeId,
+    context: { folio: FOLIO, answers: {} }, status: 'active',
+    lastInteractionAt: new Date(), completedAt: null,
+  }
+  return { lead, state }
+}
+
+function wireLead(lead: CampaignLeadData, state: LeadFlowStateData) {
+  return makeDeps({
+    conversations: { findById: vi.fn(async () => ({ id: 'conv1', contactId: 'ct1', status: 'open', leadId: 'lead1' }) as ConversationData), setLead: vi.fn(async () => {}) },
+    campaignLeads: {
+      findByContactAndCampaign: vi.fn(async () => null),
+      create: vi.fn(async () => lead),
+      findById: vi.fn(async () => lead),
+      save: vi.fn(async (l) => l),
+    },
+    flowStates: {
+      findActiveByCampaignLeadId: vi.fn(async () => state),
+      findByCampaignLeadId: vi.fn(async () => state),
+      create: vi.fn(async () => state),
+      save: vi.fn(async (s) => s),
+    },
+  })
+}
+
+describe('FlowEngine — text_input', () => {
+  it('clasifica texto libre, guarda answers.estado, avanza al cierre y dispara asignación', async () => {
+    const flow = textInputFlow()
+    const { lead, state } = leadAndState(flow, 'ask_estado')
+    const deps = wireLead(lead, state)
+    deps.dictionaries = { findById: vi.fn(async () => ({ id: 'dic1', slug: 'estados-de-mexico', name: 'Estados', categories: [{ id: 'jalisco', label: 'Jalisco', aliases: ['jalisco', 'guadalajara'] }, { id: 'nuevo_leon', label: 'Nuevo León', aliases: ['nuevo leon', 'monterrey'] }], isSystem: true })) }
+    deps.assignment = { resolve: vi.fn(async () => ({ mode: 'pool', executiveId: 'pepe' })) }
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'Soy de Guadalajara' }) }))
+
+    expect((state.context.answers as Record<string, string>).estado).toBe('jalisco')
+    expect(deps.assignment.resolve).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'pool', selector: { kind: 'coverage', attribute: 'states', value: '{{answers.estado}}' } }),
+      expect.objectContaining({ answers: { estado: 'jalisco' } })
+    )
+    expect(lead.assignmentMode).toBe('pool')
+    expect(lead.assignedExecutiveId).toBe('pepe')
+    expect(lead.assignedAt).toBeInstanceOf(Date)
+    expect(deps.campaignLeads.save).toHaveBeenCalled()
+    // avanza al cierre
+    expect(state.currentNodeId).toBe('closing')
+    expect(sender.sendTextMessage).toHaveBeenCalledWith(expect.objectContaining({ text: '¡Gracias MC-ABCDE! Te contactaremos.' }))
+  })
+
+  it('sin coincidencia + fallback reprompt: reenvía el prompt, no avanza ni asigna', async () => {
+    const flow = textInputFlow()
+    const { lead, state } = leadAndState(flow, 'ask_estado')
+    const deps = wireLead(lead, state)
+    deps.dictionaries = { findById: vi.fn(async () => ({ id: 'dic1', slug: 'x', name: 'x', categories: [{ id: 'jalisco', label: 'Jalisco', aliases: ['jalisco'] }], isSystem: false })) }
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'xyz qwerty' }) }))
+
+    expect((state.context.answers as Record<string, string>)).toEqual({})
+    expect(deps.assignment.resolve).not.toHaveBeenCalled()
+    expect(lead.assignedExecutiveId).toBeUndefined()
+    expect(state.currentNodeId).toBe('ask_estado')
+    // reenvía el prompt (1 mensaje de texto saliente = el prompt)
+    expect(sender.sendTextMessage).toHaveBeenCalledWith(expect.objectContaining({ text: '¿De qué estado nos escribes?' }))
+  })
+
+  it('assignmentOverrides gana al default para esa categoría', async () => {
+    const flow = textInputFlow()
+    ;(flow.nodes.ask_estado as { assignmentOverrides?: unknown }).assignmentOverrides = {
+      jalisco: { mode: 'executive', executiveId: 'pepe-fijo' },
+    }
+    const { lead, state } = leadAndState(flow, 'ask_estado')
+    const deps = wireLead(lead, state)
+    deps.dictionaries = { findById: vi.fn(async () => ({ id: 'dic1', slug: 'x', name: 'x', categories: [{ id: 'jalisco', label: 'Jalisco', aliases: ['guadalajara'] }], isSystem: false })) }
+    deps.assignment = { resolve: vi.fn(async () => ({ mode: 'executive', executiveId: 'pepe-fijo' })) }
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'Guadalajara' }) }))
+
+    expect(deps.assignment.resolve).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'executive', executiveId: 'pepe-fijo' }),
+      expect.anything()
+    )
+    expect(lead.assignmentMode).toBe('executive')
+  })
+
+  it('nodo sin assignment: no asigna (lead sin assignment) pero sí avanza', async () => {
+    const flow = textInputFlow()
+    delete (flow.nodes.ask_estado as { assignment?: unknown }).assignment
+    const { lead, state } = leadAndState(flow, 'ask_estado')
+    const deps = wireLead(lead, state)
+    deps.dictionaries = { findById: vi.fn(async () => ({ id: 'dic1', slug: 'x', name: 'x', categories: [{ id: 'jalisco', label: 'Jalisco', aliases: ['jalisco'] }], isSystem: false })) }
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'jalisco' }) }))
+
+    expect(deps.assignment.resolve).not.toHaveBeenCalled()
+    expect(lead.assignedExecutiveId).toBeUndefined()
+    expect(state.currentNodeId).toBe('closing')
   })
 })
