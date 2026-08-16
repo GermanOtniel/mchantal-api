@@ -122,7 +122,7 @@ export class FlowEngine {
 
     if (node.type === 'interactive_buttons') {
       await this.sendInteractive(sender, ctx, lead, node)
-    } else {
+    } else if (node.type === 'text_message') {
       await this.sendText(sender, ctx, lead, node.body, { nodeId: node.id })
       if (node.nextNodeId) {
         await this.executeNode(sender, ctx, lead, flowState, node.nextNodeId)
@@ -131,6 +131,9 @@ export class FlowEngine {
         flowState.completedAt = new Date()
         await this.deps.flowStates.save(flowState)
       }
+    } else {
+      // text_input: envía el prompt y espera el siguiente mensaje del lead
+      await this.sendText(sender, ctx, lead, node.body, { nodeId: node.id })
     }
   }
 
