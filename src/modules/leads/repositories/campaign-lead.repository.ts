@@ -18,6 +18,9 @@ function toData(lead: CampaignLead): CampaignLeadData {
       flowDefinition: lead.campaign.flowDefinition as unknown as FlowDefinition,
     },
     context: lead.context as unknown as CampaignLeadContext,
+    assignmentMode: lead.assignmentMode,
+    assignedExecutiveId: lead.assignedExecutiveId,
+    assignedAt: lead.assignedAt,
   }
 }
 
@@ -59,6 +62,9 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
     const entity = await this.repo.findOne({ where: { id: lead.id } })
     if (!entity) throw new Error('CampaignLead no encontrado')
     entity.context = lead.context as unknown as Record<string, unknown>
+    entity.assignmentMode = lead.assignmentMode ?? null
+    entity.assignedExecutiveId = lead.assignedExecutiveId ?? null
+    entity.assignedAt = lead.assignedAt ?? null
     await this.repo.save(entity)
     return lead
   }
