@@ -8,6 +8,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm'
 import { Campaign } from '../campaigns/campaign.entity'
+import { User } from '../auth/user.entity'
 import { WhatsAppContact } from '../whatsapp/whatsapp-contact.entity'
 
 @Entity({ name: 'campaign_leads' })
@@ -31,6 +32,19 @@ export class CampaignLead {
 
   @Column({ type: 'jsonb', default: () => "'{}'" })
   context!: Record<string, unknown>
+
+  @Column({ type: 'varchar', length: 20, name: 'assignment_mode', nullable: true })
+  assignmentMode!: 'executive' | 'pool' | 'manual' | null
+
+  @Column({ type: 'uuid', name: 'assigned_executive_id', nullable: true })
+  assignedExecutiveId!: string | null
+
+  @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'assigned_executive_id' })
+  assignedExecutive!: User | null
+
+  @Column({ type: 'timestamptz', name: 'assigned_at', nullable: true })
+  assignedAt!: Date | null
 
   @Column({ type: 'timestamptz', name: 'enrolled_at', default: () => 'now()' })
   enrolledAt!: Date
