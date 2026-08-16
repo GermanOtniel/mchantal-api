@@ -6,6 +6,7 @@ import { getEnv } from './config/env'
 import { authPlugin } from './modules/auth/routes/auth.routes'
 import { campaignsPlugin } from './modules/campaigns/routes/campaigns.routes'
 import { matcherDictionariesPlugin } from './modules/matcher-dictionaries/routes/matcher-dictionaries.routes'
+import { executivesPlugin } from './modules/executives/routes/executives.routes'
 import { webhookPlugin } from './modules/whatsapp/routes/webhook.routes'
 import { publicLeadCapturePlugin } from './modules/leads/routes/lead-captures.routes'
 
@@ -31,6 +32,7 @@ export async function buildApp() {
   await app.register(authPlugin, { prefix: '/v1/auth' })
   await app.register(campaignsPlugin, { prefix: '/v1/campaigns' })
   await app.register(matcherDictionariesPlugin, { prefix: '/v1/matcher-dictionaries' })
+  await app.register(executivesPlugin, { prefix: '/v1/executives' })
   await app.register(publicLeadCapturePlugin, { prefix: '/v1/public' })
   await app.register(webhookPlugin)
 
