@@ -5,6 +5,7 @@ import {
   type FlowDefinition,
   type ValidationIssue,
 } from './flow-validator'
+import type { AssignmentDirective } from '../../executives/types/assignment.types'
 
 /** Flujo minimo valido: welcome (interactive) -> cierre (text_message sin next). */
 function validFlow(): FlowDefinition {
@@ -243,5 +244,91 @@ describe('validateFlowDefinition — entryNodeId', () => {
       },
     }
     expect(validateFlowDefinition(flow)).toEqual([])
+  })
+})
+
+describe('validateFlowDefinition — text_input', () => {
+  function textInputFlow(over: Partial<Record<string, unknown>> = {}): FlowDefinition {
+    return {
+      nodes: {
+        welcome: {
+          id: 'welcome',
+          type: 'interactive_buttons',
+          body: '¿?',
+          buttons: [{ id: 'b1', title: 'Ir' }],
+          transitions: { b1: 'ask_estado' },
+          onFreeText: 'reprompt',
+        },
+        ask_estado: {
+          id: 'ask_estado',
+          type: 'text_input',
+          body: '¿De qué estado nos escribes?',
+          storeAs: 'estado',
+          matcher: { dictionaryId: 'dic1' },
+          transitions: { jalisco: 'closing', nuevo_leon: 'closing' },
+          ...over,
+        },
+        closing: { id: 'closing', type: 'text_message', body: '¡Gracias!' },
+      },
+    }
+  }
+
+  it('text_input válido → []', () => {
+    expect(validateFlowDefinition(textInputFlow())).toEqual([])
+  })
+
+  it('body vacío → TEXT_INPUT_BODY_EMPTY', () => {
+    expect(codes(validateFlowDefinition(textInputFlow({ body: '' })))).toContain('TEXT_INPUT_BODY_EMPTY')
+  })
+
+  it('storeAs vacío → TEXT_INPUT_STOREAS_EMPTY', () => {
+    expect(codes(validateFlowDefinition(textInputFlow({ storeAs: '' })))).toContain('TEXT_INPUT_STOREAS_EMPTY')
+  })
+
+  it('matcher.dictionaryId vacío → TEXT_INPUT_DICTIONARY_MISSING', () => {
+    expect(codes(validateFlowDefinition(textInputFlow({ matcher: { dictionaryId: '' } })))).toContain('TEXT_INPUT_DICTIONARY_MISSING')
+  })
+
+  it('transitions a nodo inexistente → NODE_REF_NOT_FOUND', () => {
+    expect(codes(validateFlowDefinition(textInputFlow({ transitions: { jalisco: 'no_existe' } })))).toContain('NODE_REF_NOT_FOUND')
+  })
+
+  it('assignment inválido → ASSIGNMENT_INVALID', () => {
+    const badAssignment = { mode: 'executive', executiveId: '' } as unknown as AssignmentDirective
+    expect(codes(validateFlowDefinition(textInputFlow({ assignment: badAssignment })))).toContain('ASSIGNMENT_INVALID')
+  })
+
+  it('assignment válido no genera issues', () => {
+    const assignment: AssignmentDirective = { mode: 'manual' }
+    expect(validateFlowDefinition(textInputFlow({ assignment }))).toEqual([])
+  })
+
+  it('assignmentOverrides con directiva inválida → ASSIGNMENT_INVALID', () => {
+    const overrides = { jalisco: { mode: 'executive', executiveId: '' } as unknown as AssignmentDirective }
+    expect(codes(validateFlowDefinition(textInputFlow({ assignmentOverrides: overrides })))).toContain('ASSIGNMENT_INVALID')
+  })
+
+  it('ciclo que incluye text_input → CYCLE', () => {
+    const flow: FlowDefinition = {
+      nodes: {
+        welcome: {
+          id: 'welcome',
+          type: 'interactive_buttons',
+          body: '¿?',
+          buttons: [{ id: 'b1', title: 'Ir' }],
+          transitions: { b1: 'ask' },
+          onFreeText: 'reprompt',
+        },
+        ask: {
+          id: 'ask',
+          type: 'text_input',
+          body: '¿?',
+          storeAs: 'x',
+          matcher: { dictionaryId: 'd' },
+          transitions: { a: 'welcome' },
+        },
+      },
+    }
+    expect(codes(validateFlowDefinition(flow))).toContain('CYCLE')
   })
 })

@@ -1,8 +1,10 @@
-// Modelo de nodos del flujo conversacional (slice: solo interactive_buttons + text_message).
+// Modelo de nodos del flujo conversacional (interactive_buttons + text_message + text_input).
+import { validateAssignmentDirective } from '../../executives/services/assignment-validator'
 import type {
   FlowDefinition,
   FlowNode,
   InteractiveButtonsNode,
+  TextInputNode,
   TextMessageNode,
   ValidationIssue,
 } from '../types/flow.types'
@@ -11,6 +13,7 @@ export type {
   FlowDefinition,
   FlowNode,
   InteractiveButtonsNode,
+  TextInputNode,
   TextMessageNode,
   ValidationIssue,
 } from '../types/flow.types'
@@ -60,6 +63,8 @@ export function validateFlowDefinition(flow: unknown): ValidationIssue[] {
       validateInteractive(base, node as unknown as InteractiveButtonsNode, nodeIds, issues)
     } else if (node.type === 'text_message') {
       validateText(base, node as unknown as TextMessageNode, nodeIds, issues)
+    } else if (node.type === 'text_input') {
+      validateTextInput(base, node as unknown as TextInputNode, nodeIds, issues)
     }
   }
 
@@ -135,6 +140,50 @@ function validateText(
   }
 }
 
+function validateTextInput(
+  base: string,
+  node: TextInputNode,
+  nodeIds: Set<string>,
+  issues: ValidationIssue[]
+): void {
+  if (typeof node.body !== 'string' || node.body.trim() === '') {
+    issues.push(issue(`${base}.body`, 'TEXT_INPUT_BODY_EMPTY', 'El prompt de text_input no puede estar vacío.'))
+  }
+  if (typeof node.storeAs !== 'string' || node.storeAs.trim() === '') {
+    issues.push(issue(`${base}.storeAs`, 'TEXT_INPUT_STOREAS_EMPTY', 'storeAs no puede estar vacío.'))
+  }
+  if (!node.matcher || typeof node.matcher.dictionaryId !== 'string' || node.matcher.dictionaryId.trim() === '') {
+    issues.push(issue(`${base}.matcher`, 'TEXT_INPUT_DICTIONARY_MISSING', 'matcher.dictionaryId es obligatorio.'))
+  }
+  const transitions = node.transitions ?? {}
+  for (const [catId, target] of Object.entries(transitions)) {
+    if (!target || !nodeIds.has(target)) {
+      issues.push(issue(`${base}.transitions.${catId}`, 'NODE_REF_NOT_FOUND', `La transición de la categoría "${catId}" apunta a un nodo inexistente ("${target}").`))
+    }
+  }
+  const fallback = node.fallback
+  if (typeof fallback === 'object' && fallback !== null) {
+    const t = fallback.transition
+    if (!t || !nodeIds.has(t)) {
+      issues.push(issue(`${base}.fallback.transition`, 'NODE_REF_NOT_FOUND', `fallback.transition apunta a un nodo inexistente ("${String(t)}").`))
+    }
+  }
+  if (node.assignment) {
+    const a = validateAssignmentDirective(node.assignment)
+    if (a.length > 0) {
+      issues.push(issue(`${base}.assignment`, 'ASSIGNMENT_INVALID', 'La directiva de asignación es inválida.'))
+    }
+  }
+  if (node.assignmentOverrides) {
+    for (const [catId, directive] of Object.entries(node.assignmentOverrides)) {
+      const a = validateAssignmentDirective(directive)
+      if (a.length > 0) {
+        issues.push(issue(`${base}.assignmentOverrides.${catId}`, 'ASSIGNMENT_INVALID', `El override de asignación para "${catId}" es inválido.`))
+      }
+    }
+  }
+}
+
 /** DFS desde la entrada; detecta ciclos. */
 function detectCycles(
   nodes: Record<string, unknown>,
@@ -162,6 +211,15 @@ function detectCycles(
       }
     } else if (node.type === 'text_message') {
       if (node.nextNodeId && nodes[node.nextNodeId] && dfs(node.nextNodeId)) cycle = true
+    } else if (node.type === 'text_input') {
+      const transitions = node.transitions ?? {}
+      for (const t of Object.values(transitions)) {
+        if (t && nodes[t] && dfs(t)) { cycle = true; break }
+      }
+      if (!cycle) {
+      const fb = node.fallback
+      if (typeof fb === 'object' && fb !== null && nodes[fb.transition] && dfs(fb.transition)) cycle = true
+      }
     }
     color.set(id, BLACK)
     return cycle
