@@ -194,7 +194,7 @@ function detectCycles(
   const color = new Map<string, number>()
 
   const dfs = (id: string): boolean => {
-    const node = nodes[id] as { type?: string; buttons?: { id: string }[]; transitions?: Record<string, string>; nextNodeId?: string } | undefined
+    const node = nodes[id] as { type?: string; buttons?: { id: string }[]; transitions?: Record<string, string>; nextNodeId?: string; fallback?: { transition: string } | string } | undefined
     if (!node || !isPlainObject(node)) return false
     const c = color.get(id) ?? WHITE
     if (c === GRAY) {
