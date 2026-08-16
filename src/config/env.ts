@@ -35,6 +35,11 @@ export type AppEnv = {
     pass: string
     from: string
   }
+  whatsapp: {
+    meta: { accessToken: string; phoneNumberId: string; appSecret: string }
+    verifyToken: string
+    businessPhoneNumberE164: string
+  }
 }
 
 let cached: AppEnv | null = null
@@ -57,6 +62,15 @@ export function getEnv(): AppEnv {
       user: required('SMTP_USER'),
       pass: required('SMTP_PASS'),
       from: required('SMTP_FROM'),
+    },
+    whatsapp: {
+      meta: {
+        accessToken: optional('WHATSAPP_ACCESS_TOKEN', ''),
+        phoneNumberId: optional('WHATSAPP_PHONE_NUMBER_ID', ''),
+        appSecret: optional('WHATSAPP_APP_SECRET', ''),
+      },
+      verifyToken: optional('WHATSAPP_VERIFY_TOKEN', ''),
+      businessPhoneNumberE164: optional('WHATSAPP_BUSINESS_PHONE_E164', ''),
     },
   }
   return cached
