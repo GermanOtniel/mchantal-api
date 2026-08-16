@@ -152,8 +152,8 @@ export class FlowEngine {
       await this.deps.campaignLeads.save(lead)
     }
 
-    // Avanza a la transición de la categoría (si la hay)
-    const target = node.transitions[result.categoryId]
+    // Avanza a la transición de la categoría (override) o al defaultTransition
+    const target = node.transitions[result.categoryId] ?? node.defaultTransition
     if (target) {
       await this.executeNode(sender, ctx, lead, flowState, target)
     } else {

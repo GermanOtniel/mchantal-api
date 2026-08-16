@@ -23,7 +23,8 @@ export type TextInputNode = {
   body: string
   storeAs: string
   matcher: { dictionaryId: string }
-  transitions: Record<string, string> // categoryId → nodeId
+  transitions: Record<string, string> // categoryId → nodeId (overrides; ver defaultTransition)
+  defaultTransition?: string // destino general para cualquier categoría detectada
   fallback?: 'reprompt' | { transition: string }
   assignment?: AssignmentDirective // default para todas las categorías
   assignmentOverrides?: Record<string, AssignmentDirective> // categoryId → directiva (excepciones)

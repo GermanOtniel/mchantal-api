@@ -332,3 +332,33 @@ describe('validateFlowDefinition — text_input', () => {
     expect(codes(validateFlowDefinition(flow))).toContain('CYCLE')
   })
 })
+
+describe('validateFlowDefinition — text_input defaultTransition', () => {
+  function flow(over: Partial<{ defaultTransition: string; transitions: Record<string, string> }> = {}): FlowDefinition {
+    return {
+      nodes: {
+        welcome: { id: 'welcome', type: 'interactive_buttons', body: '?', buttons: [{ id: 'b1', title: 'Ir' }], transitions: { b1: 'ask_estado' }, onFreeText: 'reprompt' },
+        ask_estado: {
+          id: 'ask_estado', type: 'text_input', body: '¿De qué estado?', storeAs: 'estado',
+          matcher: { dictionaryId: 'd1' },
+          transitions: over.transitions ?? {},
+          defaultTransition: over.defaultTransition,
+        },
+        closing: { id: 'closing', type: 'text_message', body: '¡Gracias!' },
+      },
+    }
+  }
+
+  it('defaultTransition que apunta a nodo existente es válido', () => {
+    expect(validateFlowDefinition(flow({ defaultTransition: 'closing' }))).toEqual([])
+  })
+  it('defaultTransition a nodo inexistente → NODE_REF_NOT_FOUND', () => {
+    expect(codes(validateFlowDefinition(flow({ defaultTransition: 'no_existe' })))).toContain('NODE_REF_NOT_FOUND')
+  })
+  it('sin defaultTransition ni transitions es válido (la pregunta es terminal)', () => {
+    expect(validateFlowDefinition(flow())).toEqual([])
+  })
+  it('ciclo vía defaultTransition → CYCLE', () => {
+    expect(codes(validateFlowDefinition(flow({ defaultTransition: 'welcome' })))).toContain('CYCLE')
+  })
+})

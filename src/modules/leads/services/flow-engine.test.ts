@@ -477,3 +477,24 @@ describe('FlowEngine — text_input', () => {
     expect(state.currentNodeId).toBe('closing')
   })
 })
+
+describe('FlowEngine — text_input defaultTransition', () => {
+  it('usa defaultTransition cuando la categoría no tiene transition propia', async () => {
+    const flow = textInputFlow()
+    // borra transitions por categoría y pone un defaultTransition al cierre
+    ;(flow.nodes.ask_estado as { transitions: Record<string, string>; defaultTransition?: string }).transitions = {}
+    ;(flow.nodes.ask_estado as { defaultTransition?: string }).defaultTransition = 'closing'
+    const { lead, state } = leadAndState(flow, 'ask_estado')
+    const deps = wireLead(lead, state)
+    deps.dictionaries = { findById: vi.fn(async () => ({ id: 'dic1', slug: 'x', name: 'x', categories: [{ id: 'jalisco', label: 'Jalisco', aliases: ['jalisco', 'guadalajara'] }], isSystem: false })) }
+    deps.assignment = { resolve: vi.fn(async () => ({ mode: 'manual', executiveId: null })) }
+    delete (flow.nodes.ask_estado as { assignment?: unknown }).assignment
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'Guadalajara' }) }))
+
+    expect((state.context.answers as Record<string, string>).estado).toBe('jalisco')
+    expect(state.currentNodeId).toBe('closing')
+  })
+})

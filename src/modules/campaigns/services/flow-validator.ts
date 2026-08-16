@@ -168,6 +168,9 @@ function validateTextInput(
       issues.push(issue(`${base}.fallback.transition`, 'NODE_REF_NOT_FOUND', `fallback.transition apunta a un nodo inexistente ("${String(t)}").`))
     }
   }
+  if (node.defaultTransition !== undefined && node.defaultTransition !== '' && !nodeIds.has(node.defaultTransition)) {
+    issues.push(issue(`${base}.defaultTransition`, 'NODE_REF_NOT_FOUND', `defaultTransition apunta a un nodo inexistente ("${node.defaultTransition}").`))
+  }
   if (node.assignment) {
     const a = validateAssignmentDirective(node.assignment)
     if (a.length > 0) {
@@ -194,7 +197,7 @@ function detectCycles(
   const color = new Map<string, number>()
 
   const dfs = (id: string): boolean => {
-    const node = nodes[id] as { type?: string; buttons?: { id: string }[]; transitions?: Record<string, string>; nextNodeId?: string; fallback?: { transition: string } | string } | undefined
+    const node = nodes[id] as { type?: string; buttons?: { id: string }[]; transitions?: Record<string, string>; nextNodeId?: string; fallback?: { transition: string } | string; defaultTransition?: string } | undefined
     if (!node || !isPlainObject(node)) return false
     const c = color.get(id) ?? WHITE
     if (c === GRAY) {
@@ -219,6 +222,10 @@ function detectCycles(
       if (!cycle) {
       const fb = node.fallback
       if (typeof fb === 'object' && fb !== null && nodes[fb.transition] && dfs(fb.transition)) cycle = true
+      }
+      if (!cycle) {
+        const dt = node.defaultTransition
+        if (dt && nodes[dt] && dfs(dt)) cycle = true
       }
     }
     color.set(id, BLACK)
