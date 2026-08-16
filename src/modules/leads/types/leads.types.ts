@@ -83,6 +83,22 @@ export interface CampaignLeadRepositoryPort {
   create(data: CreateCampaignLeadData): Promise<CampaignLeadData>
   findById(id: string): Promise<CampaignLeadData | null>
   save(lead: CampaignLeadData): Promise<CampaignLeadData>
+  listAll(): Promise<LeadListItem[]>
+}
+
+export type LeadListItem = {
+  id: string
+  folio: string | null
+  campaignId: string
+  campaignName: string
+  contactWaId: string
+  contactName: string | null
+  answers: Record<string, string>
+  assignmentMode: 'executive' | 'pool' | 'manual' | null
+  assignedExecutiveId: string | null
+  assignedExecutiveName: string | null
+  assignedAt: Date | null
+  enrolledAt: Date
 }
 
 export interface LeadFlowStateRepositoryPort {

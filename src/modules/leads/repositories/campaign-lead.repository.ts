@@ -6,6 +6,7 @@ import type {
   CampaignLeadData,
   CampaignLeadRepositoryPort,
   CreateCampaignLeadData,
+  LeadListItem,
 } from '../types/leads.types'
 
 function toData(lead: CampaignLead): CampaignLeadData {
@@ -67,5 +68,30 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
     entity.assignedAt = lead.assignedAt ?? null
     await this.repo.save(entity)
     return lead
+  }
+
+  async listAll(): Promise<LeadListItem[]> {
+    const rows = await this.repo.find({
+      relations: ['campaign', 'contact', 'assignedExecutive'],
+      order: { enrolledAt: 'DESC' },
+      take: 500,
+    })
+    return rows.map((r) => {
+      const ctx = (r.context as { folio?: string; answers?: Record<string, string> } | undefined) ?? {}
+      return {
+        id: r.id,
+        folio: ctx.folio ?? null,
+        campaignId: r.campaignId,
+        campaignName: r.campaign?.name ?? '',
+        contactWaId: r.contact?.waId ?? '',
+        contactName: r.contact?.profileName ?? null,
+        answers: ctx.answers ?? {},
+        assignmentMode: r.assignmentMode,
+        assignedExecutiveId: r.assignedExecutiveId,
+        assignedExecutiveName: r.assignedExecutive?.fullName ?? null,
+        assignedAt: r.assignedAt,
+        enrolledAt: r.enrolledAt,
+      }
+    })
   }
 }
