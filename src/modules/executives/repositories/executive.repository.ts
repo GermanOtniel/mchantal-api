@@ -23,11 +23,8 @@ export class ExecutiveRepository implements ExecutiveRepositoryPort {
     return AppDataSource.getRepository(User)
   }
 
-  async listExecutives(): Promise<ExecutiveData[]> {
-    const rows = await this.repo.find({
-      where: { isExecutive: true },
-      order: { fullName: 'ASC' },
-    })
+  async listAll(): Promise<ExecutiveData[]> {
+    const rows = await this.repo.find({ order: { fullName: 'ASC' } })
     return rows.map(toData)
   }
 

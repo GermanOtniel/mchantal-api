@@ -21,7 +21,7 @@ function exec(over: Partial<ExecutiveData> = {}): ExecutiveData {
 
 function mkRepo(over: Partial<ExecutiveRepositoryPort> = {}): ExecutiveRepositoryPort {
   return {
-    listExecutives: vi.fn(async () => []),
+    listAll: vi.fn(async () => []),
     findById: vi.fn(async () => null),
     findActiveByCoverage: vi.fn(async () => []),
     findAllActive: vi.fn(async () => []),

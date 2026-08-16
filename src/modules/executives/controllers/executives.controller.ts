@@ -27,7 +27,7 @@ export class ExecutivesController {
   constructor(private readonly execs: ExecutiveRepositoryPort) {}
 
   list = async (_req: FastifyRequest, reply: FastifyReply) => {
-    const executives = await this.execs.listExecutives()
+    const executives = await this.execs.listAll()
     return reply.send({ executives: executives.map(toResponse) })
   }
 

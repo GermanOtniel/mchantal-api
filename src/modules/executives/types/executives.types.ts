@@ -13,7 +13,7 @@ export type UpdateExecutiveData = {
 }
 
 export interface ExecutiveRepositoryPort {
-  listExecutives(): Promise<ExecutiveData[]>
+  listAll(): Promise<ExecutiveData[]>
   findById(id: string): Promise<ExecutiveData | null>
   findActiveByCoverage(attribute: string, value: string): Promise<ExecutiveData[]>
   findAllActive(): Promise<ExecutiveData[]>
