@@ -498,3 +498,58 @@ describe('FlowEngine — text_input defaultTransition', () => {
     expect(state.currentNodeId).toBe('closing')
   })
 })
+
+describe('FlowEngine — free_text (captura libre sin match)', () => {
+  function freeTextFlow(): FlowDefinition {
+    return {
+      nodes: {
+        welcome: {
+          id: 'welcome', type: 'interactive_buttons', body: 'Hola {{folio}}, ¿?',
+          buttons: [{ id: 'cotizar', title: 'Cotizar' }],
+          transitions: { cotizar: 'capture' },
+          onFreeText: 'reprompt',
+        },
+        capture: {
+          id: 'capture', type: 'free_text',
+          body: '¿Cómo te llamas?',
+          storeAs: 'nombre',
+          nextNodeId: 'closing',
+        },
+        closing: { id: 'closing', type: 'text_message', body: 'Gracias {{answers.nombre}}, te contactaremos.' },
+      },
+    }
+  }
+
+  it('captura el texto crudo, lo guarda en answers[storeAs] y avanza; el cierre interpola {{answers.X}}', async () => {
+    const flow = freeTextFlow()
+    const { lead, state } = leadAndState(flow, 'capture')
+    const deps = wireLead(lead, state)
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'Juan Pérez' }) }))
+
+    expect((state.context.answers as Record<string, string>).nombre).toBe('Juan Pérez')
+    expect(state.currentNodeId).toBe('closing')
+    expect(sender.sendTextMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ toWaId: '12345', text: 'Gracias Juan Pérez, te contactaremos.' })
+    )
+  })
+
+  it('sin nextNodeId: captura y completa el flujo', async () => {
+    const flow = freeTextFlow()
+    ;(flow.nodes.capture as { nextNodeId?: string }).nextNodeId = undefined
+    const { lead, state } = leadAndState(flow, 'capture')
+    const deps = wireLead(lead, state)
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'Juan' }) }))
+
+    expect((state.context.answers as Record<string, string>).nombre).toBe('Juan')
+    expect(state.status).toBe('completed')
+    expect(state.completedAt).toBeInstanceOf(Date)
+    // no se envía cierre (no hay nextNodeId)
+    expect(sender.sendTextMessage).not.toHaveBeenCalled()
+  })
+})

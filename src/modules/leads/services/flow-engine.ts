@@ -4,6 +4,7 @@ import type {
   FlowDefinition,
   InteractiveButtonsNode,
   TextInputNode,
+  FreeTextNode,
 } from '../../campaigns/types/flow.types'
 import type { AssignmentDirective } from '../../executives/types/assignment.types'
 import type {
@@ -110,6 +111,8 @@ export class FlowEngine {
 
     if (currentNode.type === 'text_input') {
       await this.processTextInput(sender, ctx, lead, flowState, currentNode)
+    } else if (currentNode.type === 'free_text') {
+      await this.processFreeText(sender, ctx, lead, flowState, currentNode)
     }
   }
 
@@ -180,6 +183,30 @@ export class FlowEngine {
     }
   }
 
+  private async processFreeText(
+    sender: WhatsAppSender,
+    ctx: InboundFlowContext,
+    lead: CampaignLeadData,
+    flowState: LeadFlowStateData,
+    node: FreeTextNode
+  ): Promise<void> {
+    // Sólo el texto libre se captura; otro tipo de mensaje se ignora (queda esperando)
+    if (ctx.message.type !== 'text' || !ctx.message.text) return
+
+    const prevAnswers = (flowState.context.answers as Record<string, string> | undefined) ?? {}
+    const answers = { ...prevAnswers, [node.storeAs]: ctx.message.text }
+    flowState.context = { ...flowState.context, answers }
+    await this.deps.flowStates.save(flowState)
+
+    if (node.nextNodeId) {
+      await this.executeNode(sender, ctx, lead, flowState, node.nextNodeId)
+    } else {
+      flowState.status = 'completed'
+      flowState.completedAt = new Date()
+      await this.deps.flowStates.save(flowState)
+    }
+  }
+
   private async executeNode(
     sender: WhatsAppSender,
     ctx: InboundFlowContext,
@@ -196,9 +223,9 @@ export class FlowEngine {
     await this.deps.flowStates.save(flowState)
 
     if (node.type === 'interactive_buttons') {
-      await this.sendInteractive(sender, ctx, lead, node)
+      await this.sendInteractive(sender, ctx, flowState, node)
     } else if (node.type === 'text_message') {
-      await this.sendText(sender, ctx, lead, node.body, { nodeId: node.id })
+      await this.sendText(sender, ctx, flowState, node.body, { nodeId: node.id })
       if (node.nextNodeId) {
         await this.executeNode(sender, ctx, lead, flowState, node.nextNodeId)
       } else {
@@ -207,18 +234,18 @@ export class FlowEngine {
         await this.deps.flowStates.save(flowState)
       }
     } else {
-      // text_input: envía el prompt y espera el siguiente mensaje del lead
-      await this.sendText(sender, ctx, lead, node.body, { nodeId: node.id })
+      // text_input / free_text: envía el prompt y espera el siguiente mensaje del lead
+      await this.sendText(sender, ctx, flowState, node.body, { nodeId: node.id })
     }
   }
 
   private async sendInteractive(
     sender: WhatsAppSender,
     ctx: InboundFlowContext,
-    lead: CampaignLeadData,
+    flowState: LeadFlowStateData,
     node: InteractiveButtonsNode
   ): Promise<void> {
-    const body = interpolate(node.body, lead.context.folio ?? '', lead.context)
+    const body = interpolate(node.body, String(flowState.context.folio ?? ''), flowState.context)
     const result = await sender.sendInteractiveButtons({
       toWaId: ctx.waId,
       body,
@@ -235,11 +262,11 @@ export class FlowEngine {
   private async sendText(
     sender: WhatsAppSender,
     ctx: InboundFlowContext,
-    lead: CampaignLeadData,
+    flowState: LeadFlowStateData,
     body: string,
     opts: { nodeId?: string } = {}
   ): Promise<void> {
-    const text = interpolate(body, lead.context.folio ?? '', lead.context)
+    const text = interpolate(body, String(flowState.context.folio ?? ''), flowState.context)
     const result = await sender.sendTextMessage({ toWaId: ctx.waId, text })
     await this.persistOutbound(ctx, {
       providerMessageId: result.providerMessageId,
@@ -293,8 +320,13 @@ function interpolate(
   folio: string,
   context: Record<string, unknown>
 ): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
-    if (key === 'folio') return folio
-    return String(context[key] ?? '')
+  return template.replace(/\{\{(\w+(?:\.\w+)*)\}\}/g, (_, expr: string) => {
+    if (expr === 'folio') return folio
+    const [root, ...rest] = expr.split('.')
+    let cur: unknown = context[root]
+    for (const k of rest) {
+      cur = (cur as Record<string, unknown> | undefined)?.[k]
+    }
+    return cur === undefined || cur === null ? '' : String(cur)
   })
 }

@@ -362,3 +362,26 @@ describe('validateFlowDefinition — text_input defaultTransition', () => {
     expect(codes(validateFlowDefinition(flow({ defaultTransition: 'welcome' })))).toContain('CYCLE')
   })
 })
+
+describe('validateFlowDefinition — free_text', () => {
+  function flow(over: Partial<{ body: string; storeAs: string; nextNodeId?: string }> = {}): FlowDefinition {
+    return {
+      nodes: {
+        welcome: { id: 'welcome', type: 'interactive_buttons', body: '?', buttons: [{ id: 'b1', title: 'Ir' }], transitions: { b1: 'capture' }, onFreeText: 'reprompt' },
+        capture: { id: 'capture', type: 'free_text', body: over.body ?? 'Déjame tu nombre', storeAs: over.storeAs ?? 'nombre', nextNodeId: over.nextNodeId },
+      },
+    }
+  }
+  it('free_text válido → []', () => expect(validateFlowDefinition(flow())).toEqual([]))
+  it('con nextNodeId válido → []', () => {
+    const f = flow({ nextNodeId: 'welcome' })
+    ;(f.nodes.welcome as { transitions: Record<string, string> }).transitions = { b1: 'closing' }
+    f.nodes.closing = { id: 'closing', type: 'text_message', body: 'gracias' } as never
+    // recoloca capture.nextNodeId a closing
+    ;(f.nodes.capture as { nextNodeId?: string }).nextNodeId = 'closing'
+    expect(validateFlowDefinition(f)).toEqual([])
+  })
+  it('body vacío → FREE_TEXT_BODY_EMPTY', () => expect(codes(validateFlowDefinition(flow({ body: '' })))).toContain('FREE_TEXT_BODY_EMPTY'))
+  it('storeAs vacío → FREE_TEXT_STOREAS_EMPTY', () => expect(codes(validateFlowDefinition(flow({ storeAs: '' })))).toContain('FREE_TEXT_STOREAS_EMPTY'))
+  it('nextNodeId a inexistente → NODE_REF_NOT_FOUND', () => expect(codes(validateFlowDefinition(flow({ nextNodeId: 'no_existe' })))).toContain('NODE_REF_NOT_FOUND'))
+})

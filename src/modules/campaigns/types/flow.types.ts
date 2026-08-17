@@ -30,7 +30,16 @@ export type TextInputNode = {
   assignmentOverrides?: Record<string, AssignmentDirective> // categoryId → directiva (excepciones)
 }
 
-export type FlowNode = InteractiveButtonsNode | TextMessageNode | TextInputNode
+export type FreeTextNode = {
+  id: string
+  type: 'free_text'
+  body: string
+  storeAs: string
+  // Captura el texto crudo en answers[storeAs] (sin matchear) y avanza a nextNodeId (o completa si no hay).
+  nextNodeId?: string
+}
+
+export type FlowNode = InteractiveButtonsNode | TextMessageNode | TextInputNode | FreeTextNode
 
 export type FlowDefinition = { nodes: Record<string, FlowNode>; entryNodeId?: string }
 

@@ -5,6 +5,7 @@ import type {
   FlowNode,
   InteractiveButtonsNode,
   TextInputNode,
+  FreeTextNode,
   TextMessageNode,
   ValidationIssue,
 } from '../types/flow.types'
@@ -65,6 +66,8 @@ export function validateFlowDefinition(flow: unknown): ValidationIssue[] {
       validateText(base, node as unknown as TextMessageNode, nodeIds, issues)
     } else if (node.type === 'text_input') {
       validateTextInput(base, node as unknown as TextInputNode, nodeIds, issues)
+    } else if (node.type === 'free_text') {
+      validateFreeText(base, node as unknown as FreeTextNode, nodeIds, issues)
     }
   }
 
@@ -134,6 +137,24 @@ function validateText(
   nodeIds: Set<string>,
   issues: ValidationIssue[]
 ): void {
+  const next = node.nextNodeId
+  if (next !== undefined && next !== '' && !nodeIds.has(next)) {
+    issues.push(issue(`${base}.nextNodeId`, 'NODE_REF_NOT_FOUND', `nextNodeId apunta a un nodo inexistente ("${next}").`))
+  }
+}
+
+function validateFreeText(
+  base: string,
+  node: FreeTextNode,
+  nodeIds: Set<string>,
+  issues: ValidationIssue[]
+): void {
+  if (typeof node.body !== 'string' || node.body.trim() === '') {
+    issues.push(issue(`${base}.body`, 'FREE_TEXT_BODY_EMPTY', 'El prompt de free_text no puede estar vacío.'))
+  }
+  if (typeof node.storeAs !== 'string' || node.storeAs.trim() === '') {
+    issues.push(issue(`${base}.storeAs`, 'FREE_TEXT_STOREAS_EMPTY', 'storeAs no puede estar vacío.'))
+  }
   const next = node.nextNodeId
   if (next !== undefined && next !== '' && !nodeIds.has(next)) {
     issues.push(issue(`${base}.nextNodeId`, 'NODE_REF_NOT_FOUND', `nextNodeId apunta a un nodo inexistente ("${next}").`))
@@ -213,6 +234,8 @@ function detectCycles(
         if (t && nodes[t] && dfs(t)) { cycle = true; break }
       }
     } else if (node.type === 'text_message') {
+      if (node.nextNodeId && nodes[node.nextNodeId] && dfs(node.nextNodeId)) cycle = true
+    } else if (node.type === 'free_text') {
       if (node.nextNodeId && nodes[node.nextNodeId] && dfs(node.nextNodeId)) cycle = true
     } else if (node.type === 'text_input') {
       const transitions = node.transitions ?? {}
