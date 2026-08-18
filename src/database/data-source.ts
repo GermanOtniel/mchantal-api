@@ -12,6 +12,10 @@ import { WhatsAppMessage } from '../entities/whatsapp/whatsapp-message.entity'
 import { LeadCapture } from '../entities/leads/lead-capture.entity'
 import { CampaignLead } from '../entities/leads/campaign-lead.entity'
 import { LeadFlowState } from '../entities/leads/lead-flow-state.entity'
+import { Role } from '../entities/rbac/role.entity'
+import { Permission } from '../entities/rbac/permission.entity'
+import { RolePermission } from '../entities/rbac/role-permission.entity'
+import { UserRole } from '../entities/rbac/user-role.entity'
 import { AuthInitial1747129600000 } from './migrations/1747129600000-AuthInitial'
 import { CampaignsInitial1749000000000 } from './migrations/1749000000000-CampaignsInitial'
 import { LeadsWhatsappInitial1749100000000 } from './migrations/1749100000000-LeadsWhatsappInitial'
@@ -28,7 +32,7 @@ export const AppDataSource = new DataSource({
   username: process.env.DB_USER,
   password: process.env.DB_PASSWORD || '',
   database: process.env.DB_NAME,
-  entities: [User, RefreshToken, PasswordResetToken, Campaign, MatcherDictionary, WhatsAppContact, WhatsAppConversation, WhatsAppMessage, LeadCapture, CampaignLead, LeadFlowState],
+  entities: [User, RefreshToken, PasswordResetToken, Campaign, MatcherDictionary, WhatsAppContact, WhatsAppConversation, WhatsAppMessage, LeadCapture, CampaignLead, LeadFlowState, Role, Permission, RolePermission, UserRole],
   migrations: [AuthInitial1747129600000, CampaignsInitial1749000000000, LeadsWhatsappInitial1749100000000, MatcherDictionariesInitial1750000000000, ExecutivesAndAssignmentInitial1750100000000, MatcherDictionaryPresetsSeed1750200000000],
   synchronize: false,
   logging: process.env.NODE_ENV === 'development',
