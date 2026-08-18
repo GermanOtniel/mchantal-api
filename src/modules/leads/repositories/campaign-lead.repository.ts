@@ -35,7 +35,7 @@ function applyLeadFilters(qb: LeadQB, p: ListLeadsRepoParams): void {
   if (p.status) qb.andWhere('cl.status = :status', { status: p.status })
   if (p.executiveId) qb.andWhere('cl.assigned_executive_id = :executiveId', { executiveId: p.executiveId })
   if (p.q) {
-    qb.andWhere('(cl.id = :qExact OR cl.context->>\'folio\' ILIKE :qLike)', { qExact: p.q, qLike: `%${p.q}%` })
+    qb.andWhere('(cl.id::text = :qExact OR cl.context->>\'folio\' ILIKE :qLike)', { qExact: p.q, qLike: `%${p.q}%` })
   }
 }
 
@@ -114,42 +114,53 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
   async listLeads(p: ListLeadsRepoParams): Promise<LeadsRepoPage> {
     const qb = this.repo
       .createQueryBuilder('cl')
-      .leftJoinAndSelect('cl.campaign', 'campaign')
-      .leftJoinAndSelect('cl.contact', 'contact')
-      .leftJoinAndSelect('cl.assignedExecutive', 'executive')
-      .leftJoin('whatsapp_conversations', 'wc', "wc.lead_id = cl.id AND wc.status = 'open'")
-      .addSelect('wc.last_message_at', 'wc_last_message_at')
-      .addSelect('wc.last_message_direction', 'wc_last_message_direction')
-      .addSelect('wc.needs_reply_cleared_at', 'wc_cleared_at')
+      .select('cl.id', 'id')
+      .addSelect('cl.context', 'context')
+      .addSelect('cl.campaign_id', 'campaignId')
+      .addSelect('cl.assigned_executive_id', 'assignedExecutiveId')
+      .addSelect('cl.assigned_at', 'assignedAt')
+      .addSelect('cl.enrolled_at', 'enrolledAt')
+      .addSelect('cl.status', 'status')
+      .addSelect('cl.assignment_mode', 'assignmentMode')
+      .addSelect('campaign.name', 'campaignName')
+      .addSelect('contact.wa_id', 'contactWaId')
+      .addSelect('contact.profile_name', 'contactName')
+      .addSelect('executive.full_name', 'assignedExecutiveName')
       .addSelect(
         `CASE WHEN wc.last_message_direction = 'inbound' AND wc.last_message_at > COALESCE(wc.needs_reply_cleared_at, '-infinity'::timestamptz) THEN true ELSE false END`,
         'needsReply'
       )
+      .leftJoin('campaigns', 'campaign', 'campaign.id = cl.campaign_id')
+      .leftJoin('whatsapp_contacts', 'contact', 'contact.id = cl.contact_id')
+      .leftJoin('users', 'executive', 'executive.id = cl.assigned_executive_id')
+      .leftJoin('whatsapp_conversations', 'wc', "wc.lead_id = cl.id AND wc.status = 'open'")
       .orderBy('cl.enrolled_at', 'DESC')
-      .skip((p.page - 1) * p.pageSize)
-      .take(p.pageSize)
+      .offset((p.page - 1) * p.pageSize)
+      .limit(p.pageSize)
 
     applyLeadFilters(qb, p)
 
-    const { entities, raw } = await qb.getRawAndEntities()
+    const raw = await qb.getRawMany<Record<string, unknown>>()
 
-    const items: LeadListItem[] = entities.map((r, i) => {
-      const ctx = (r.context as { folio?: string; answers?: Record<string, string> } | undefined) ?? {}
+    const items: LeadListItem[] = raw.map((r) => {
+      const ctxRaw = r.context
+      const parsed = (typeof ctxRaw === 'string' ? JSON.parse(ctxRaw) : ctxRaw) as { folio?: string; answers?: Record<string, string> } | undefined
+      const ctx = parsed ?? {}
       return {
-        id: r.id,
+        id: String(r.id),
         folio: ctx.folio ?? null,
-        campaignId: r.campaignId,
-        campaignName: r.campaign?.name ?? '',
-        contactWaId: r.contact?.waId ?? '',
-        contactName: r.contact?.profileName ?? null,
+        campaignId: String(r.campaignId),
+        campaignName: String(r.campaignName ?? ''),
+        contactWaId: String(r.contactWaId ?? ''),
+        contactName: (r.contactName as string | null) ?? null,
         answers: ctx.answers ?? {},
-        assignmentMode: r.assignmentMode,
-        assignedExecutiveId: r.assignedExecutiveId,
-        assignedExecutiveName: r.assignedExecutive?.fullName ?? null,
-        assignedAt: r.assignedAt,
-        enrolledAt: r.enrolledAt,
-        status: r.status,
-        needsReply: Boolean((raw[i] as Record<string, unknown>)?.needsReply),
+        assignmentMode: (r.assignmentMode as 'executive' | 'pool' | 'manual' | null) ?? null,
+        assignedExecutiveId: (r.assignedExecutiveId as string | null) ?? null,
+        assignedExecutiveName: (r.assignedExecutiveName as string | null) ?? null,
+        assignedAt: r.assignedAt ? new Date(r.assignedAt as string) : null,
+        enrolledAt: new Date(r.enrolledAt as string),
+        status: String(r.status ?? 'new'),
+        needsReply: Boolean(r.needsReply),
       }
     })
 
