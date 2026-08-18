@@ -22,6 +22,7 @@ import { LeadsWhatsappInitial1749100000000 } from './migrations/1749100000000-Le
 import { ExecutivesAndAssignmentInitial1750100000000 } from './migrations/1750100000000-ExecutivesAndAssignmentInitial'
 import { MatcherDictionariesInitial1750000000000 } from './migrations/1750000000000-MatcherDictionariesInitial'
 import { MatcherDictionaryPresetsSeed1750200000000 } from './migrations/1750200000000-MatcherDictionaryPresetsSeed'
+import { RbacInitial1750300000000 } from './migrations/1750300000000-RbacInitial'
 
 dotenv.config()
 
@@ -33,7 +34,7 @@ export const AppDataSource = new DataSource({
   password: process.env.DB_PASSWORD || '',
   database: process.env.DB_NAME,
   entities: [User, RefreshToken, PasswordResetToken, Campaign, MatcherDictionary, WhatsAppContact, WhatsAppConversation, WhatsAppMessage, LeadCapture, CampaignLead, LeadFlowState, Role, Permission, RolePermission, UserRole],
-  migrations: [AuthInitial1747129600000, CampaignsInitial1749000000000, LeadsWhatsappInitial1749100000000, MatcherDictionariesInitial1750000000000, ExecutivesAndAssignmentInitial1750100000000, MatcherDictionaryPresetsSeed1750200000000],
+  migrations: [AuthInitial1747129600000, CampaignsInitial1749000000000, LeadsWhatsappInitial1749100000000, MatcherDictionariesInitial1750000000000, ExecutivesAndAssignmentInitial1750100000000, MatcherDictionaryPresetsSeed1750200000000, RbacInitial1750300000000],
   synchronize: false,
   logging: process.env.NODE_ENV === 'development',
 })
