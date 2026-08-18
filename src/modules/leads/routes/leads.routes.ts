@@ -1,12 +1,30 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox'
+import { jwtAuthHook } from '../../../shared/auth/jwt-auth.hook'
+import { PERMISSIONS } from '../../../shared/rbac/permissions.catalog'
+import {
+  loadPermissionsHook,
+  requireAnyPermission,
+} from '../../../shared/rbac/rbac.hooks'
 import { LeadsController } from '../controllers/leads.controller'
 import { CampaignLeadRepository } from '../repositories/campaign-lead.repository'
 import { LeadListResponseSchema } from '../schemas/leads.schemas'
 
-// NOTE: endpoints sin auth en esta iteración; protección JWT entra después.
 export const leadsPlugin: FastifyPluginAsyncTypebox = async (app) => {
   const repo = new CampaignLeadRepository()
   const controller = new LeadsController(repo)
 
-  app.get('/', { schema: { response: { 200: LeadListResponseSchema } } }, controller.list)
+  app.addHook('preHandler', jwtAuthHook)
+  app.addHook('preHandler', loadPermissionsHook)
+
+  app.get(
+    '/',
+    {
+      preHandler: requireAnyPermission(
+        PERMISSIONS.LEADS_READ,
+        PERMISSIONS.LEADS_INBOX_ASSIGNED
+      ),
+      schema: { response: { 200: LeadListResponseSchema } },
+    },
+    controller.list
+  )
 }
