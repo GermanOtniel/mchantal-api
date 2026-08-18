@@ -51,7 +51,7 @@ export function getEnv(): AppEnv {
     nodeEnv: optional('NODE_ENV', 'development'),
     isDev: optional('NODE_ENV', 'development') === 'development',
     jwtSecret: required('JWT_SECRET'),
-    jwtAccessExpiresIn: optional('JWT_ACCESS_EXPIRES_IN', '15m'),
+    jwtAccessExpiresIn: optional('JWT_ACCESS_EXPIRES_IN', '7d'),
     refreshTokenDays: optionalInt('REFRESH_TOKEN_DAYS', 30),
     passwordResetTokenMinutes: optionalInt('PASSWORD_RESET_TOKEN_MINUTES', 60),
     frontendPasswordResetUrl: required('FRONTEND_PASSWORD_RESET_URL'),
