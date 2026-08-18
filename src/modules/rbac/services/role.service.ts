@@ -200,7 +200,18 @@ export class UserRoleService {
 
   constructor(private readonly permissionService: PermissionService) {}
 
-  async listUsersWithRoles(): Promise<
+  private filterSuperAdmin(
+    roles: { id: string; name: string; slug: string }[],
+    actorIsSuperAdmin: boolean
+  ): { id: string; name: string; slug: string }[] {
+    return actorIsSuperAdmin
+      ? roles
+      : roles.filter((r) => r.slug !== SUPER_ADMIN_ROLE_SLUG)
+  }
+
+  async listUsersWithRoles(
+    actorIsSuperAdmin = false
+  ): Promise<
     {
       id: string
       email: string
@@ -215,25 +226,27 @@ export class UserRoleService {
     return Promise.all(
       users.map(async (user) => {
         const roles = await this.permissionRepo.getRolesForUser(user.id)
+        const visible = roles.map((r) => ({ id: r.id, name: r.name, slug: r.slug }))
         return {
           id: user.id,
           email: user.email,
           fullName: user.fullName,
-          roles: roles.map((r) => ({ id: r.id, name: r.name, slug: r.slug })),
+          roles: this.filterSuperAdmin(visible, actorIsSuperAdmin),
         }
       })
     )
   }
 
-  async getUserRoles(userId: string): Promise<RoleSummary[]> {
+  async getUserRoles(userId: string, actorIsSuperAdmin = false): Promise<RoleSummary[]> {
     const roles = await this.permissionRepo.getRolesForUser(userId)
-    return roles.map((r) => ({
+    const mapped = roles.map((r) => ({
       id: r.id,
       name: r.name,
       slug: r.slug,
       description: r.description,
       isSystem: r.isSystem,
     }))
+    return this.filterSuperAdmin(mapped, actorIsSuperAdmin) as RoleSummary[]
   }
 
   async setUserRoles(
@@ -246,25 +259,37 @@ export class UserRoleService {
       throw new HttpError('One or more roles are invalid', 400, 'INVALID_ROLE')
     }
 
+    const actorIsSuperAdmin = await this.permissionRepo.userHasRoleSlug(
+      actorUserId,
+      SUPER_ADMIN_ROLE_SLUG
+    )
     const assigningSuperAdmin = roles.some((r) => r?.slug === SUPER_ADMIN_ROLE_SLUG)
-    if (assigningSuperAdmin) {
-      const actorIsSuperAdmin = await this.permissionRepo.userHasRoleSlug(
-        actorUserId,
-        SUPER_ADMIN_ROLE_SLUG
+    if (assigningSuperAdmin && !actorIsSuperAdmin) {
+      throw new HttpError(
+        'Only Super Admin can assign Super Admin role',
+        403,
+        'SUPER_ADMIN_ASSIGNMENT_FORBIDDEN'
       )
-      if (!actorIsSuperAdmin) {
-        throw new HttpError(
-          'Only Super Admin can assign Super Admin role',
-          403,
-          'SUPER_ADMIN_ASSIGNMENT_FORBIDDEN'
-        )
+    }
+
+    // Preservar super-admin existente si el actor no es super-admin (no puede verlo/gestionarlo)
+    let finalRoleIds = roleIds
+    if (!actorIsSuperAdmin) {
+      const currentRoleIds = await this.userRoleRepo.getRoleIdsForUser(targetUserId)
+      const currentRoles = await Promise.all(
+        currentRoleIds.map((id) => this.roleRepo.findById(id))
+      )
+      const superAdminRole = currentRoles.find((r) => r?.slug === SUPER_ADMIN_ROLE_SLUG)
+      if (superAdminRole && !finalRoleIds.includes(superAdminRole.id)) {
+        finalRoleIds = [...finalRoleIds, superAdminRole.id]
       }
     }
 
-    await this.userRoleRepo.setRolesForUser(targetUserId, roleIds)
+    await this.userRoleRepo.setRolesForUser(targetUserId, finalRoleIds)
     this.permissionService.invalidateCache(targetUserId)
 
     const updatedRoles = await this.permissionRepo.getRolesForUser(targetUserId)
-    return updatedRoles.map((r) => ({ id: r.id, name: r.name, slug: r.slug }))
+    const mapped = updatedRoles.map((r) => ({ id: r.id, name: r.name, slug: r.slug }))
+    return this.filterSuperAdmin(mapped, actorIsSuperAdmin)
   }
 }

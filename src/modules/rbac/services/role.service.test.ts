@@ -196,4 +196,64 @@ describe('RoleService / UserRoleService', () => {
       ).rejects.toMatchObject({ statusCode: 400, code: 'INVALID_ROLE' })
     })
   })
+
+  describe('UserRoleService — ocultar/preservar super-admin', () => {
+    const superAdminRole = { id: 'sa', name: 'Super Admin', slug: 'super-admin', description: null, isSystem: true }
+    const generalAdminRole = { id: 'ga', name: 'General Admin', slug: 'general-admin', description: null, isSystem: true }
+
+    it('listUsersWithRoles(false) filtra super-admin de los roles de cada usuario', async () => {
+      // AppDataSource.getRepository(User).find mock devuelve un usuario
+      const { AppDataSource } = await import('../../../database/data-source')
+      ;(AppDataSource.getRepository as unknown as vi.Mock).mockReturnValue({
+        find: vi.fn().mockResolvedValue([{ id: 'u1', email: 'a@b.com', fullName: 'A' }]),
+      })
+      permissionRepo.getRolesForUser.mockResolvedValue([superAdminRole, generalAdminRole])
+      const users = await userRoleService.listUsersWithRoles(false)
+      expect(users[0].roles.map((r) => r.slug)).toEqual(['general-admin'])
+    })
+
+    it('listUsersWithRoles(true) incluye super-admin', async () => {
+      const { AppDataSource } = await import('../../../database/data-source')
+      ;(AppDataSource.getRepository as unknown as vi.Mock).mockReturnValue({
+        find: vi.fn().mockResolvedValue([{ id: 'u1', email: 'a@b.com', fullName: 'A' }]),
+      })
+      permissionRepo.getRolesForUser.mockResolvedValue([superAdminRole, generalAdminRole])
+      const users = await userRoleService.listUsersWithRoles(true)
+      expect(users[0].roles.map((r) => r.slug)).toContain('super-admin')
+    })
+
+    it('getUserRoles(userId, false) filtra super-admin', async () => {
+      permissionRepo.getRolesForUser.mockResolvedValue([superAdminRole, generalAdminRole])
+      const roles = await userRoleService.getUserRoles('u1', false)
+      expect(roles.map((r) => r.slug)).toEqual(['general-admin'])
+    })
+
+    it('getUserRoles(userId, true) incluye super-admin', async () => {
+      permissionRepo.getRolesForUser.mockResolvedValue([superAdminRole, generalAdminRole])
+      const roles = await userRoleService.getUserRoles('u1', true)
+      expect(roles.map((r) => r.slug)).toContain('super-admin')
+    })
+
+    it('setUserRoles preserva super-admin existente cuando el actor NO es super-admin', async () => {
+      // target tiene super-admin; actor no es super-admin; envía [] (no ve super-admin)
+      permissionRepo.userHasRoleSlug.mockResolvedValue(false) // actor no es super-admin
+      userRoleRepo.getRoleIdsForUser.mockResolvedValue(['sa']) // target tiene super-admin
+      roleRepo.findById.mockImplementation((id: string) =>
+        Promise.resolve(id === 'sa' ? { id: 'sa', slug: 'super-admin' } : null)
+      )
+      permissionRepo.getRolesForUser.mockResolvedValue([superAdminRole])
+      const result = await userRoleService.setUserRoles('target', [], 'actor')
+      expect(userRoleRepo.setRolesForUser).toHaveBeenCalledWith('target', ['sa'])
+      expect(result.map((r) => r.slug)).not.toContain('super-admin') // filtrado en respuesta
+    })
+
+    it('setUserRoles NO preserva super-admin cuando el actor ES super-admin', async () => {
+      permissionRepo.userHasRoleSlug.mockResolvedValue(true)
+      userRoleRepo.getRoleIdsForUser.mockResolvedValue(['sa'])
+      roleRepo.findById.mockResolvedValue(null) // no roles enviados
+      permissionRepo.getRolesForUser.mockResolvedValue([])
+      await userRoleService.setUserRoles('target', [], 'actor')
+      expect(userRoleRepo.setRolesForUser).toHaveBeenCalledWith('target', [])
+    })
+  })
 })
