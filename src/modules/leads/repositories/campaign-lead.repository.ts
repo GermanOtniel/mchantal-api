@@ -7,6 +7,8 @@ import type {
   CampaignLeadRepositoryPort,
   CreateCampaignLeadData,
   LeadListItem,
+  ListLeadsRepoParams,
+  LeadsRepoPage,
 } from '../types/leads.types'
 
 function toData(lead: CampaignLead): CampaignLeadData {
@@ -22,6 +24,18 @@ function toData(lead: CampaignLead): CampaignLeadData {
     assignmentMode: lead.assignmentMode,
     assignedExecutiveId: lead.assignedExecutiveId,
     assignedAt: lead.assignedAt,
+  }
+}
+
+type LeadQB = import('typeorm').SelectQueryBuilder<CampaignLead>
+
+function applyLeadFilters(qb: LeadQB, p: ListLeadsRepoParams): void {
+  if (p.scopeUserId) qb.andWhere('cl.assigned_executive_id = :scopeUserId', { scopeUserId: p.scopeUserId })
+  if (p.campaignId) qb.andWhere('cl.campaign_id = :campaignId', { campaignId: p.campaignId })
+  if (p.status) qb.andWhere('cl.status = :status', { status: p.status })
+  if (p.executiveId) qb.andWhere('cl.assigned_executive_id = :executiveId', { executiveId: p.executiveId })
+  if (p.q) {
+    qb.andWhere('(cl.id = :qExact OR cl.context->>\'folio\' ILIKE :qLike)', { qExact: p.q, qLike: `%${p.q}%` })
   }
 }
 
@@ -91,7 +105,58 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
         assignedExecutiveName: r.assignedExecutive?.fullName ?? null,
         assignedAt: r.assignedAt,
         enrolledAt: r.enrolledAt,
+        status: r.status,
+        needsReply: false,
       }
     })
+  }
+
+  async listLeads(p: ListLeadsRepoParams): Promise<LeadsRepoPage> {
+    const qb = this.repo
+      .createQueryBuilder('cl')
+      .leftJoinAndSelect('cl.campaign', 'campaign')
+      .leftJoinAndSelect('cl.contact', 'contact')
+      .leftJoinAndSelect('cl.assignedExecutive', 'executive')
+      .leftJoin('whatsapp_conversations', 'wc', "wc.lead_id = cl.id AND wc.status = 'open'")
+      .addSelect('wc.last_message_at', 'wc_last_message_at')
+      .addSelect('wc.last_message_direction', 'wc_last_message_direction')
+      .addSelect('wc.needs_reply_cleared_at', 'wc_cleared_at')
+      .addSelect(
+        `CASE WHEN wc.last_message_direction = 'inbound' AND wc.last_message_at > COALESCE(wc.needs_reply_cleared_at, '-infinity'::timestamptz) THEN true ELSE false END`,
+        'needsReply'
+      )
+      .orderBy('cl.enrolled_at', 'DESC')
+      .skip((p.page - 1) * p.pageSize)
+      .take(p.pageSize)
+
+    applyLeadFilters(qb, p)
+
+    const { entities, raw } = await qb.getRawAndEntities()
+
+    const items: LeadListItem[] = entities.map((r, i) => {
+      const ctx = (r.context as { folio?: string; answers?: Record<string, string> } | undefined) ?? {}
+      return {
+        id: r.id,
+        folio: ctx.folio ?? null,
+        campaignId: r.campaignId,
+        campaignName: r.campaign?.name ?? '',
+        contactWaId: r.contact?.waId ?? '',
+        contactName: r.contact?.profileName ?? null,
+        answers: ctx.answers ?? {},
+        assignmentMode: r.assignmentMode,
+        assignedExecutiveId: r.assignedExecutiveId,
+        assignedExecutiveName: r.assignedExecutive?.fullName ?? null,
+        assignedAt: r.assignedAt,
+        enrolledAt: r.enrolledAt,
+        status: r.status,
+        needsReply: Boolean((raw[i] as Record<string, unknown>)?.needsReply),
+      }
+    })
+
+    const countQb = this.repo.createQueryBuilder('cl')
+    applyLeadFilters(countQb, p)
+    const total = await countQb.getCount()
+
+    return { items, total }
   }
 }

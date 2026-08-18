@@ -88,6 +88,7 @@ export interface CampaignLeadRepositoryPort {
   findById(id: string): Promise<CampaignLeadData | null>
   save(lead: CampaignLeadData): Promise<CampaignLeadData>
   listAll(): Promise<LeadListItem[]>
+  listLeads(params: ListLeadsRepoParams): Promise<LeadsRepoPage>
 }
 
 export type LeadListItem = {
@@ -103,7 +104,21 @@ export type LeadListItem = {
   assignedExecutiveName: string | null
   assignedAt: Date | null
   enrolledAt: Date
+  status: string
+  needsReply: boolean
 }
+
+export type ListLeadsRepoParams = {
+  scopeUserId: string | null
+  campaignId?: string
+  status?: string
+  executiveId?: string
+  q?: string
+  page: number
+  pageSize: number
+}
+
+export type LeadsRepoPage = { items: LeadListItem[]; total: number }
 
 export interface LeadFlowStateRepositoryPort {
   findActiveByCampaignLeadId(campaignLeadId: string): Promise<LeadFlowStateData | null>
