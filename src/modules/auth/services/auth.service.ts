@@ -16,7 +16,11 @@ import type {
   RegisterInput,
   RegisterResult,
 } from '../types/auth.types'
-import { toUserPublic } from '../types/auth.types'
+import { toUserPublic, type AuthUser } from '../types/auth.types'
+import {
+  buildUserAccessProfile,
+  PermissionService,
+} from '../../rbac/services/permission.service'
 import {
   buildFullName,
   normalizeOptionalName,
@@ -49,11 +53,21 @@ function parseRegisterNames(input: RegisterInput) {
 export class AuthService {
   private readonly userRepo = new UserRepository()
   private readonly refreshRepo = new RefreshTokenRepository()
+  private readonly permissionService = new PermissionService()
 
   constructor(
     private readonly env: AppEnv,
     private readonly tokens: TokenService
   ) {}
+
+  private async toAuthUser(user: User): Promise<AuthUser> {
+    const access = await buildUserAccessProfile(user.id, this.permissionService)
+    return {
+      ...toUserPublic(user),
+      roles: access.roles.map((r) => ({ id: r.id, name: r.name, slug: r.slug })),
+      permissions: access.permissions,
+    }
+  }
 
   async register(input: RegisterInput): Promise<RegisterResult> {
     const email = normalizeEmail(input.email)
@@ -97,7 +111,7 @@ export class AuthService {
     })
 
     return {
-      user: toUserPublic(result),
+      user: await this.toAuthUser(result),
       accessToken,
       refreshToken: rawRefresh,
     }
@@ -130,10 +144,18 @@ export class AuthService {
     })
 
     return {
-      user: toUserPublic(user),
+      user: await this.toAuthUser(user),
       accessToken,
       refreshToken: rawRefresh,
     }
+  }
+
+  async me(userId: string): Promise<AuthUser> {
+    const user = await this.userRepo.findById(userId)
+    if (!user) {
+      throw new HttpError('Unauthorized', 401, 'UNAUTHORIZED')
+    }
+    return this.toAuthUser(user)
   }
 
   async refresh(input: RefreshInput): Promise<RefreshResult> {

@@ -10,6 +10,7 @@ import { executivesPlugin } from './modules/executives/routes/executives.routes'
 import { webhookPlugin } from './modules/whatsapp/routes/webhook.routes'
 import { publicLeadCapturePlugin } from './modules/leads/routes/lead-captures.routes'
 import { leadsPlugin } from './modules/leads/routes/leads.routes'
+import { rbacPlugin } from './modules/rbac/routes/rbac.routes'
 
 export async function buildApp() {
   const env = getEnv()
@@ -35,6 +36,7 @@ export async function buildApp() {
   await app.register(matcherDictionariesPlugin, { prefix: '/v1/matcher-dictionaries' })
   await app.register(executivesPlugin, { prefix: '/v1/executives' })
   await app.register(leadsPlugin, { prefix: '/v1/leads' })
+  await app.register(rbacPlugin, { prefix: '/v1/rbac' })
   await app.register(publicLeadCapturePlugin, { prefix: '/v1/public' })
   await app.register(webhookPlugin)
 

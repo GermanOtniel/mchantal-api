@@ -10,6 +10,24 @@ const UserPublicSchema = Type.Object({
   fullName: Type.String(),
 })
 
+const RoleSummarySchema = Type.Object({
+  id: Type.String(),
+  name: Type.String(),
+  slug: Type.String(),
+})
+
+const AuthUserSchema = Type.Object({
+  id: Type.String(),
+  email: Type.String(),
+  firstName: Type.String(),
+  middleName: Type.Union([Type.String(), Type.Null()]),
+  lastName: Type.String(),
+  secondLastName: Type.Union([Type.String(), Type.Null()]),
+  fullName: Type.String(),
+  roles: Type.Array(RoleSummarySchema),
+  permissions: Type.Array(Type.String()),
+})
+
 const nameField = (max = 100) => Type.String({ minLength: 1, maxLength: max })
 
 export const RegisterBodySchema = Type.Object(
@@ -57,12 +75,16 @@ export const ResetPasswordBodySchema = Type.Object(
 )
 
 export const RegisterResponseSchema = Type.Object({
-  user: UserPublicSchema,
+  user: AuthUserSchema,
   accessToken: Type.String(),
   refreshToken: Type.String(),
 })
 
 export const LoginResponseSchema = RegisterResponseSchema
+
+export const MeResponseSchema = Type.Object({
+  user: AuthUserSchema,
+})
 
 export const RefreshResponseSchema = Type.Object({
   accessToken: Type.String(),

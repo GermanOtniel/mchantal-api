@@ -1,4 +1,10 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox'
+import { jwtAuthHook } from '../../../shared/auth/jwt-auth.hook'
+import { PERMISSIONS } from '../../../shared/rbac/permissions.catalog'
+import {
+  loadPermissionsHook,
+  requirePermission,
+} from '../../../shared/rbac/rbac.hooks'
 import { ExecutivesController } from '../controllers/executives.controller'
 import { ExecutiveRepository } from '../repositories/executive.repository'
 import {
@@ -9,20 +15,26 @@ import {
   UpdateExecutiveBodySchema,
 } from '../schemas/executives.schemas'
 
-// NOTE: endpoints sin auth en esta iteración; protección JWT entra después.
 export const executivesPlugin: FastifyPluginAsyncTypebox = async (app) => {
   const repo = new ExecutiveRepository()
   const controller = new ExecutivesController(repo)
 
+  app.addHook('preHandler', jwtAuthHook)
+  app.addHook('preHandler', loadPermissionsHook)
+
   app.get(
     '/',
-    { schema: { response: { 200: ExecutiveListResponseSchema } } },
+    {
+      preHandler: requirePermission(PERMISSIONS.USERS_MANAGE),
+      schema: { response: { 200: ExecutiveListResponseSchema } },
+    },
     controller.list
   )
 
   app.patch(
     '/:id',
     {
+      preHandler: requirePermission(PERMISSIONS.USERS_MANAGE),
       schema: {
         params: IdParamsSchema,
         body: UpdateExecutiveBodySchema,

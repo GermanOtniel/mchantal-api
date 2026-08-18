@@ -9,6 +9,7 @@ import {
   LoginBodySchema,
   LoginResponseSchema,
   LogoutBodySchema,
+  MeResponseSchema,
   RefreshBodySchema,
   RefreshResponseSchema,
   RegisterBodySchema,
@@ -18,6 +19,7 @@ import {
 import { AuthService } from '../services/auth.service'
 import { PasswordResetService } from '../services/password-reset.service'
 import { TokenService } from '../services/token.service'
+import { jwtAuthHook } from '../../../shared/auth/jwt-auth.hook'
 
 export const authPlugin: FastifyPluginAsyncTypebox = async (app) => {
   const env = getEnv()
@@ -67,6 +69,20 @@ export const authPlugin: FastifyPluginAsyncTypebox = async (app) => {
       },
     },
     controller.refresh
+  )
+
+  app.get(
+    '/me',
+    {
+      preHandler: jwtAuthHook,
+      schema: {
+        response: {
+          200: MeResponseSchema,
+          401: ErrorResponseSchema,
+        },
+      },
+    },
+    controller.me
   )
 
   app.post(

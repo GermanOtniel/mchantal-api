@@ -10,7 +10,8 @@
     "start": "node dist/server.js",
     "migration:run": "ts-node src/database/run-migrations.ts",
     "migration:generate": "typeorm migration:generate -d src/database/data-source.ts",
-    "migration:create": "typeorm migration:create"
+    "migration:create": "typeorm migration:create",
+    "rbac:assign-role": "ts-node src/database/assign-role.ts"
   },
   "keywords": [],
   "author": "",

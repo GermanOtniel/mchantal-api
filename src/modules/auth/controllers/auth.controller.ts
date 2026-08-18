@@ -55,6 +55,18 @@ export class AuthController {
     }
   }
 
+  me = async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      if (!request.user?.sub) {
+        throw new HttpError('Unauthorized', 401, 'UNAUTHORIZED')
+      }
+      const user = await this.authService.me(request.user.sub)
+      return reply.send({ user })
+    } catch (e) {
+      return handleError(reply, e)
+    }
+  }
+
   refresh = async (
     request: FastifyRequest<{ Body: Static<typeof RefreshBodySchema> }>,
     reply: FastifyReply

@@ -15,13 +15,28 @@ export type UserPublic = {
   fullName: string
 }
 
+export type RoleSummary = {
+  id: string
+  name: string
+  slug: string
+}
+
+export type AuthUser = UserPublic & {
+  roles: RoleSummary[]
+  permissions: string[]
+}
+
 export type RegisterResult = {
-  user: UserPublic
+  user: AuthUser
 } & AuthTokensResponse
 
 export type LoginResult = {
-  user: UserPublic
+  user: AuthUser
 } & AuthTokensResponse
+
+export type MeResult = {
+  user: AuthUser
+}
 
 export type RefreshResult = AuthTokensResponse
 
