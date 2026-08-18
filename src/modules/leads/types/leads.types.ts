@@ -174,6 +174,7 @@ export interface WhatsAppConversationRepositoryWidePort
   extends WhatsAppConversationRepositoryPort {
   findOpenByContactId(contactId: string): Promise<ConversationData | null>
   createOpen(contactId: string): Promise<ConversationData>
+  clearNeedsReplyByLeadId(leadId: string): Promise<boolean>
 }
 
 export type MessageData = {
@@ -197,4 +198,42 @@ export interface WhatsAppMessageRepositoryWidePort
     status: string,
     metadata: Record<string, unknown>
   ): Promise<void>
+}
+
+export type ListLeadsQuery = {
+  page?: number
+  campaignId?: string
+  status?: string
+  executiveId?: string
+  q?: string
+}
+
+export type LeadItemResponse = {
+  id: string
+  folio: string | null
+  campaignId: string
+  campaignName: string
+  contactWaId: string
+  contactName: string | null
+  answers: Record<string, string>
+  assignmentMode: 'executive' | 'pool' | 'manual' | null
+  assignedExecutiveId: string | null
+  assignedExecutiveName: string | null
+  assignedAt: string | null
+  enrolledAt: string
+  status: string
+  needsReply: boolean
+}
+
+export type LeadsPageResponse = {
+  items: LeadItemResponse[]
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
+}
+
+export type LeadFilterOptions = {
+  campaigns: { id: string; name: string }[]
+  executives: { id: string; fullName: string }[]
 }
