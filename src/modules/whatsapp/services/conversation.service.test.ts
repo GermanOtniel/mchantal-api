@@ -34,6 +34,8 @@ function makeDeps(over: Partial<{
       setLead: vi.fn(async () => {}),
       findOpenByContactId: vi.fn(async () => conv),
       createOpen: vi.fn(async () => conv),
+      touchLastMessage: vi.fn(async () => {}),
+      clearNeedsReplyByLeadId: vi.fn(async () => true),
     } as WhatsAppConversationRepositoryWidePort,
     messages: {
       create: vi.fn(async () => ({})),
@@ -72,11 +74,19 @@ describe('ConversationService.processInboundEvents — mensaje', () => {
   })
 
   it('si no hay conversación abierta, crea una nueva', async () => {
-    const deps = makeDeps({ conversations: { findById: vi.fn(async () => null), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => ({ id: 'conv-new', contactId: 'ct1', status: 'open', leadId: null })) } as WhatsAppConversationRepositoryWidePort })
+    const deps = makeDeps({ conversations: { findById: vi.fn(async () => null), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => ({ id: 'conv-new', contactId: 'ct1', status: 'open', leadId: null })), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort })
     const svc = new ConversationService(deps)
     await svc.processInboundEvents([{ kind: 'message', message: msg({}) }], {} as WhatsAppSender)
     expect(deps.conversations.createOpen).toHaveBeenCalledWith('ct1')
     expect(deps.flowEngine.handleInbound).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ conversationId: 'conv-new' }))
+  })
+
+  it('tras persistir inbound, llama touchLastMessage con dirección inbound', async () => {
+    const deps = makeDeps()
+    const svc = new ConversationService(deps)
+    const ts = new Date('2026-01-01T00:00:00Z')
+    await svc.processInboundEvents([{ kind: 'message', message: msg({ providerMessageId: 'm-t', timestamp: ts }) }], {} as WhatsAppSender)
+    expect(deps.conversations.touchLastMessage).toHaveBeenCalledWith('conv1', ts, 'inbound')
   })
 
   it('interactive: type se persiste como interactive y guarda replyId/Title en metadata', async () => {

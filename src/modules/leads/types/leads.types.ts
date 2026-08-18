@@ -115,6 +115,7 @@ export interface LeadFlowStateRepositoryPort {
 export interface WhatsAppConversationRepositoryPort {
   findById(id: string): Promise<ConversationData | null>
   setLead(conversationId: string, leadId: string): Promise<void>
+  touchLastMessage(id: string, at: Date, direction: 'inbound' | 'outbound'): Promise<void>
 }
 
 export interface WhatsAppMessageRepositoryPort {
