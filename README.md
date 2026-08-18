@@ -39,7 +39,9 @@ Variables clave (ver `.env.example`):
 
 ## RBAC — roles y permisos
 
-Modelo: `users` ↔ `user_roles` ↔ `roles` ↔ `role_permissions` ↔ `permissions`. La migración `RbacInitial` siembra **10 permisos** y **2 roles del sistema**:
+Modelo: `users` ↔ `user_roles` ↔ `roles` ↔ `role_permissions` ↔ `permissions`. Las migraciones `RbacInitial` + `RbacCatalogTrim` dejan **5 permisos** y **2 roles del sistema**:
+
+Permisos: `roles.manage`, `users.manage`, `campaigns.manage`, `matcher_dictionaries.manage` (Diccionarios, independiente de Campañas), `leads.read`. Otros permisos (analytics, whatsapp, `leads.inbox.assigned`, `leads.reassign`, etc.) **no existen** hasta que sus módulos/features se implementen (YAGNI).
 
 | Rol | Slug | Permisos | Visibilidad |
 |---|---|---|---|
