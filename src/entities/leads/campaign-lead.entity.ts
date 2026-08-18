@@ -49,6 +49,9 @@ export class CampaignLead {
   @Column({ type: 'timestamptz', name: 'enrolled_at', default: () => 'now()' })
   enrolledAt!: Date
 
+  @Column({ type: 'varchar', length: 20, default: 'new' })
+  status!: string
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date
 

@@ -3,6 +3,10 @@ import type { NormalizedMessage } from '../../../shared/whatsapp/types/inbound.t
 import type { AssignmentDirective, AssignmentResult, LeadAssignmentContext } from '../../executives/types/assignment.types'
 import type { MatcherDictionaryData } from '../../matcher-dictionaries/types/dictionary.types'
 
+export const LEAD_STATUSES = ['new', 'in_progress', 'on_hold', 'qualified', 'disqualified'] as const
+export type LeadStatus = (typeof LEAD_STATUSES)[number]
+export const LEAD_STATUS_DEFAULT: LeadStatus = 'new'
+
 export type LeadCaptureData = {
   id: string
   folio: string
