@@ -30,7 +30,7 @@ export const matcherDictionariesPlugin: FastifyPluginAsyncTypebox = async (app) 
   app.get(
     '/',
     {
-      preHandler: requirePermission(PERMISSIONS.CAMPAIGNS_MANAGE),
+      preHandler: requirePermission(PERMISSIONS.MATCHER_DICTIONARIES_MANAGE),
       schema: { response: { 200: DictionaryListResponseSchema } },
     },
     controller.list
@@ -39,7 +39,7 @@ export const matcherDictionariesPlugin: FastifyPluginAsyncTypebox = async (app) 
   app.get(
     '/:id',
     {
-      preHandler: requirePermission(PERMISSIONS.CAMPAIGNS_MANAGE),
+      preHandler: requirePermission(PERMISSIONS.MATCHER_DICTIONARIES_MANAGE),
       schema: { params: IdParamsSchema, response: { 200: DictionaryResponseSchema, 404: ErrorResponseSchema } },
     },
     controller.getById
@@ -48,7 +48,7 @@ export const matcherDictionariesPlugin: FastifyPluginAsyncTypebox = async (app) 
   app.post(
     '/',
     {
-      preHandler: requirePermission(PERMISSIONS.CAMPAIGNS_MANAGE),
+      preHandler: requirePermission(PERMISSIONS.MATCHER_DICTIONARIES_MANAGE),
       schema: {
         body: CreateDictionaryBodySchema,
         response: { 201: DictionaryResponseSchema, 400: ErrorResponseSchema, 409: ErrorResponseSchema },
@@ -60,7 +60,7 @@ export const matcherDictionariesPlugin: FastifyPluginAsyncTypebox = async (app) 
   app.patch(
     '/:id',
     {
-      preHandler: requirePermission(PERMISSIONS.CAMPAIGNS_MANAGE),
+      preHandler: requirePermission(PERMISSIONS.MATCHER_DICTIONARIES_MANAGE),
       schema: {
         params: IdParamsSchema,
         body: UpdateDictionaryBodySchema,
@@ -79,7 +79,7 @@ export const matcherDictionariesPlugin: FastifyPluginAsyncTypebox = async (app) 
   app.post(
     '/:id/clone',
     {
-      preHandler: requirePermission(PERMISSIONS.CAMPAIGNS_MANAGE),
+      preHandler: requirePermission(PERMISSIONS.MATCHER_DICTIONARIES_MANAGE),
       schema: { params: IdParamsSchema, response: { 201: DictionaryResponseSchema, 404: ErrorResponseSchema } },
     },
     controller.clone
@@ -88,7 +88,7 @@ export const matcherDictionariesPlugin: FastifyPluginAsyncTypebox = async (app) 
   app.delete(
     '/:id',
     {
-      preHandler: requirePermission(PERMISSIONS.CAMPAIGNS_MANAGE),
+      preHandler: requirePermission(PERMISSIONS.MATCHER_DICTIONARIES_MANAGE),
       schema: { params: IdParamsSchema, response: { 204: {}, 403: ErrorResponseSchema, 404: ErrorResponseSchema } },
     },
     controller.remove
@@ -97,7 +97,7 @@ export const matcherDictionariesPlugin: FastifyPluginAsyncTypebox = async (app) 
   app.post(
     '/:id/classify',
     {
-      preHandler: requirePermission(PERMISSIONS.CAMPAIGNS_MANAGE),
+      preHandler: requirePermission(PERMISSIONS.MATCHER_DICTIONARIES_MANAGE),
       schema: {
         params: IdParamsSchema,
         body: ClassifyBodySchema,

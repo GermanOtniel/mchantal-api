@@ -1,14 +1,9 @@
 export const PERMISSIONS = {
-  WHATSAPP_CONVERSATIONS_READ: 'whatsapp.conversations.read',
-  WHATSAPP_MESSAGES_SEND: 'whatsapp.messages.send',
   ROLES_MANAGE: 'roles.manage',
   USERS_MANAGE: 'users.manage',
   CAMPAIGNS_MANAGE: 'campaigns.manage',
+  MATCHER_DICTIONARIES_MANAGE: 'matcher_dictionaries.manage',
   LEADS_READ: 'leads.read',
-  LEADS_ASSIGNABLE: 'leads.assignable',
-  LEADS_INBOX_ASSIGNED: 'leads.inbox.assigned',
-  LEADS_REASSIGN: 'leads.reassign',
-  ANALYTICS_READ: 'analytics.read',
 } as const
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS]
@@ -23,16 +18,6 @@ export type PermissionDefinition = {
 
 export const PERMISSION_CATALOG: PermissionDefinition[] = [
   {
-    key: PERMISSIONS.WHATSAPP_CONVERSATIONS_READ,
-    module: 'whatsapp',
-    description: 'Ver conversaciones y mensajes de WhatsApp',
-  },
-  {
-    key: PERMISSIONS.WHATSAPP_MESSAGES_SEND,
-    module: 'whatsapp',
-    description: 'Enviar mensajes de WhatsApp',
-  },
-  {
     key: PERMISSIONS.ROLES_MANAGE,
     module: 'rbac',
     description: 'Crear y editar roles y permisos',
@@ -40,7 +25,7 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   {
     key: PERMISSIONS.USERS_MANAGE,
     module: 'rbac',
-    description: 'Asignar roles a usuarios',
+    description: 'Asignar roles a usuarios y gestionar ejecutivos',
   },
   {
     key: PERMISSIONS.CAMPAIGNS_MANAGE,
@@ -48,29 +33,14 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     description: 'Crear y editar campañas de captura',
   },
   {
+    key: PERMISSIONS.MATCHER_DICTIONARIES_MANAGE,
+    module: 'leads',
+    description: 'Crear y editar diccionarios de matchers',
+  },
+  {
     key: PERMISSIONS.LEADS_READ,
     module: 'leads',
-    description: 'Ver capturas y leads del sistema',
-  },
-  {
-    key: PERMISSIONS.LEADS_ASSIGNABLE,
-    module: 'leads',
-    description: 'Puede recibir leads asignados automáticamente',
-  },
-  {
-    key: PERMISSIONS.LEADS_INBOX_ASSIGNED,
-    module: 'leads',
-    description: 'Ver en inbox solo conversaciones asignadas',
-  },
-  {
-    key: PERMISSIONS.LEADS_REASSIGN,
-    module: 'leads',
-    description: 'Reasignar leads y conversaciones a otros ejecutivos',
-  },
-  {
-    key: PERMISSIONS.ANALYTICS_READ,
-    module: 'analytics',
-    description: 'Ver dashboard analítico de leads',
+    description: 'Ver leads del sistema',
   },
 ]
 

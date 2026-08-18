@@ -3,7 +3,7 @@ import { jwtAuthHook } from '../../../shared/auth/jwt-auth.hook'
 import { PERMISSIONS } from '../../../shared/rbac/permissions.catalog'
 import {
   loadPermissionsHook,
-  requireAnyPermission,
+  requirePermission,
 } from '../../../shared/rbac/rbac.hooks'
 import { LeadsController } from '../controllers/leads.controller'
 import { CampaignLeadRepository } from '../repositories/campaign-lead.repository'
@@ -19,10 +19,7 @@ export const leadsPlugin: FastifyPluginAsyncTypebox = async (app) => {
   app.get(
     '/',
     {
-      preHandler: requireAnyPermission(
-        PERMISSIONS.LEADS_READ,
-        PERMISSIONS.LEADS_INBOX_ASSIGNED
-      ),
+      preHandler: requirePermission(PERMISSIONS.LEADS_READ),
       schema: { response: { 200: LeadListResponseSchema } },
     },
     controller.list

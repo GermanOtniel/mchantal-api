@@ -57,8 +57,8 @@ describe('rbac.hooks', () => {
     })
 
     it('acepta si alguno de los permisos (OR) está presente', async () => {
-      const guard = requirePermission('leads.read', 'leads.inbox.assigned')
-      const req = makeRequest({ permissions: new Set(['leads.inbox.assigned']) })
+      const guard = requirePermission('leads.read', 'campaigns.manage')
+      const req = makeRequest({ permissions: new Set(['campaigns.manage']) })
       await expect(guard(req as never, {} as never)).resolves.toBeUndefined()
     })
 
