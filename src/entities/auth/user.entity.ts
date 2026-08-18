@@ -43,6 +43,15 @@ export class User {
   @Column({ type: 'timestamptz', nullable: true, name: 'email_verified_at' })
   emailVerifiedAt!: Date | null
 
+  @Column({ type: 'boolean', name: 'is_executive', default: false })
+  isExecutive!: boolean
+
+  @Column({ type: 'jsonb', default: () => "'{}'" })
+  coverage!: Record<string, string[]>
+
+  @Column({ type: 'timestamptz', name: 'last_assigned_at', nullable: true })
+  lastAssignedAt!: Date | null
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date
 

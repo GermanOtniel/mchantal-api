@@ -3,7 +3,10 @@ import type { NormalizedMessage } from '../../../shared/whatsapp/types/inbound.t
 import type {
   FlowDefinition,
   InteractiveButtonsNode,
+  TextInputNode,
+  FreeTextNode,
 } from '../../campaigns/types/flow.types'
+import type { AssignmentDirective } from '../../executives/types/assignment.types'
 import type {
   CampaignLeadData,
   FlowEngineDeps,
@@ -11,6 +14,7 @@ import type {
   LeadFlowStateData,
 } from '../types/leads.types'
 import { FOLIO_REGEX } from './folio.service'
+import { classify } from '../../matcher-dictionaries/services/classifier'
 
 export class FlowEngine {
   constructor(private readonly deps: FlowEngineDeps) {}
@@ -102,6 +106,104 @@ export class FlowEngine {
       ) {
         await this.executeNode(sender, ctx, lead, flowState, flowState.currentNodeId)
       }
+      return
+    }
+
+    if (currentNode.type === 'text_input') {
+      await this.processTextInput(sender, ctx, lead, flowState, currentNode)
+    } else if (currentNode.type === 'free_text') {
+      await this.processFreeText(sender, ctx, lead, flowState, currentNode)
+    }
+  }
+
+  private async processTextInput(
+    sender: WhatsAppSender,
+    ctx: InboundFlowContext,
+    lead: CampaignLeadData,
+    flowState: LeadFlowStateData,
+    node: TextInputNode
+  ): Promise<void> {
+    // Sólo texto libre dispara clasificación; cualquier otra cosa → reprompt
+    if (ctx.message.type !== 'text' || !ctx.message.text) {
+      await this.repromptOrFallback(sender, ctx, lead, flowState, node)
+      return
+    }
+
+    const dictionary = await this.deps.dictionaries.findById(node.matcher.dictionaryId)
+    if (!dictionary) return
+
+    const result = classify(ctx.message.text, dictionary.categories)
+    if (!result) {
+      await this.repromptOrFallback(sender, ctx, lead, flowState, node)
+      return
+    }
+
+    // Guarda la respuesta detectada en answers[storeAs]
+    const prevAnswers = (flowState.context.answers as Record<string, string> | undefined) ?? {}
+    const answers = { ...prevAnswers, [node.storeAs]: result.categoryId }
+    flowState.context = { ...flowState.context, answers }
+    await this.deps.flowStates.save(flowState)
+
+    // Resuelve la directiva de asignación (override por categoría gana al default)
+    const directive: AssignmentDirective | undefined =
+      node.assignmentOverrides?.[result.categoryId] ?? node.assignment
+    if (directive) {
+      const assignmentResult = await this.deps.assignment.resolve(directive, flowState.context)
+      lead.assignmentMode = assignmentResult.mode
+      lead.assignedExecutiveId = assignmentResult.executiveId
+      lead.assignedAt = new Date()
+      await this.deps.campaignLeads.save(lead)
+    }
+
+    // Avanza a la transición de la categoría (override) o al defaultTransition
+    const target = node.transitions[result.categoryId] ?? node.defaultTransition
+    if (target) {
+      await this.executeNode(sender, ctx, lead, flowState, target)
+    } else {
+      // Sin transición: el text_input es terminal → completa el flujo
+      flowState.status = 'completed'
+      flowState.completedAt = new Date()
+      await this.deps.flowStates.save(flowState)
+    }
+  }
+
+  private async repromptOrFallback(
+    sender: WhatsAppSender,
+    ctx: InboundFlowContext,
+    lead: CampaignLeadData,
+    flowState: LeadFlowStateData,
+    node: TextInputNode
+  ): Promise<void> {
+    const fallback = node.fallback
+    if (typeof fallback === 'object' && fallback !== null) {
+      await this.executeNode(sender, ctx, lead, flowState, fallback.transition)
+    } else {
+      // 'reprompt' o undefined → reenvía el prompt
+      await this.executeNode(sender, ctx, lead, flowState, flowState.currentNodeId)
+    }
+  }
+
+  private async processFreeText(
+    sender: WhatsAppSender,
+    ctx: InboundFlowContext,
+    lead: CampaignLeadData,
+    flowState: LeadFlowStateData,
+    node: FreeTextNode
+  ): Promise<void> {
+    // Sólo el texto libre se captura; otro tipo de mensaje se ignora (queda esperando)
+    if (ctx.message.type !== 'text' || !ctx.message.text) return
+
+    const prevAnswers = (flowState.context.answers as Record<string, string> | undefined) ?? {}
+    const answers = { ...prevAnswers, [node.storeAs]: ctx.message.text }
+    flowState.context = { ...flowState.context, answers }
+    await this.deps.flowStates.save(flowState)
+
+    if (node.nextNodeId) {
+      await this.executeNode(sender, ctx, lead, flowState, node.nextNodeId)
+    } else {
+      flowState.status = 'completed'
+      flowState.completedAt = new Date()
+      await this.deps.flowStates.save(flowState)
     }
   }
 
@@ -121,9 +223,9 @@ export class FlowEngine {
     await this.deps.flowStates.save(flowState)
 
     if (node.type === 'interactive_buttons') {
-      await this.sendInteractive(sender, ctx, lead, node)
-    } else {
-      await this.sendText(sender, ctx, lead, node.body, { nodeId: node.id })
+      await this.sendInteractive(sender, ctx, flowState, node)
+    } else if (node.type === 'text_message') {
+      await this.sendText(sender, ctx, flowState, node.body, { nodeId: node.id })
       if (node.nextNodeId) {
         await this.executeNode(sender, ctx, lead, flowState, node.nextNodeId)
       } else {
@@ -131,16 +233,19 @@ export class FlowEngine {
         flowState.completedAt = new Date()
         await this.deps.flowStates.save(flowState)
       }
+    } else {
+      // text_input / free_text: envía el prompt y espera el siguiente mensaje del lead
+      await this.sendText(sender, ctx, flowState, node.body, { nodeId: node.id })
     }
   }
 
   private async sendInteractive(
     sender: WhatsAppSender,
     ctx: InboundFlowContext,
-    lead: CampaignLeadData,
+    flowState: LeadFlowStateData,
     node: InteractiveButtonsNode
   ): Promise<void> {
-    const body = interpolate(node.body, lead.context.folio ?? '', lead.context)
+    const body = interpolate(node.body, String(flowState.context.folio ?? ''), flowState.context)
     const result = await sender.sendInteractiveButtons({
       toWaId: ctx.waId,
       body,
@@ -157,11 +262,11 @@ export class FlowEngine {
   private async sendText(
     sender: WhatsAppSender,
     ctx: InboundFlowContext,
-    lead: CampaignLeadData,
+    flowState: LeadFlowStateData,
     body: string,
     opts: { nodeId?: string } = {}
   ): Promise<void> {
-    const text = interpolate(body, lead.context.folio ?? '', lead.context)
+    const text = interpolate(body, String(flowState.context.folio ?? ''), flowState.context)
     const result = await sender.sendTextMessage({ toWaId: ctx.waId, text })
     await this.persistOutbound(ctx, {
       providerMessageId: result.providerMessageId,
@@ -215,8 +320,13 @@ function interpolate(
   folio: string,
   context: Record<string, unknown>
 ): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
-    if (key === 'folio') return folio
-    return String(context[key] ?? '')
+  return template.replace(/\{\{(\w+(?:\.\w+)*)\}\}/g, (_, expr: string) => {
+    if (expr === 'folio') return folio
+    const [root, ...rest] = expr.split('.')
+    let cur: unknown = context[root]
+    for (const k of rest) {
+      cur = (cur as Record<string, unknown> | undefined)?.[k]
+    }
+    return cur === undefined || cur === null ? '' : String(cur)
   })
 }

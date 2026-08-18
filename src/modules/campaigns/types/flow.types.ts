@@ -1,4 +1,5 @@
-// Modelo de nodos del flujo conversacional (slice: solo interactive_buttons + text_message).
+// Modelo de nodos del flujo conversacional.
+import type { AssignmentDirective } from '../../executives/types/assignment.types'
 
 export type InteractiveButtonsNode = {
   id: string
@@ -16,7 +17,29 @@ export type TextMessageNode = {
   nextNodeId?: string
 }
 
-export type FlowNode = InteractiveButtonsNode | TextMessageNode
+export type TextInputNode = {
+  id: string
+  type: 'text_input'
+  body: string
+  storeAs: string
+  matcher: { dictionaryId: string }
+  transitions: Record<string, string> // categoryId → nodeId (overrides; ver defaultTransition)
+  defaultTransition?: string // destino general para cualquier categoría detectada
+  fallback?: 'reprompt' | { transition: string }
+  assignment?: AssignmentDirective // default para todas las categorías
+  assignmentOverrides?: Record<string, AssignmentDirective> // categoryId → directiva (excepciones)
+}
+
+export type FreeTextNode = {
+  id: string
+  type: 'free_text'
+  body: string
+  storeAs: string
+  // Captura el texto crudo en answers[storeAs] (sin matchear) y avanza a nextNodeId (o completa si no hay).
+  nextNodeId?: string
+}
+
+export type FlowNode = InteractiveButtonsNode | TextMessageNode | TextInputNode | FreeTextNode
 
 export type FlowDefinition = { nodes: Record<string, FlowNode>; entryNodeId?: string }
 

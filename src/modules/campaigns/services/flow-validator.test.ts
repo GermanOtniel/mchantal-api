@@ -5,6 +5,7 @@ import {
   type FlowDefinition,
   type ValidationIssue,
 } from './flow-validator'
+import type { AssignmentDirective } from '../../executives/types/assignment.types'
 
 /** Flujo minimo valido: welcome (interactive) -> cierre (text_message sin next). */
 function validFlow(): FlowDefinition {
@@ -244,4 +245,143 @@ describe('validateFlowDefinition — entryNodeId', () => {
     }
     expect(validateFlowDefinition(flow)).toEqual([])
   })
+})
+
+describe('validateFlowDefinition — text_input', () => {
+  function textInputFlow(over: Partial<Record<string, unknown>> = {}): FlowDefinition {
+    return {
+      nodes: {
+        welcome: {
+          id: 'welcome',
+          type: 'interactive_buttons',
+          body: '¿?',
+          buttons: [{ id: 'b1', title: 'Ir' }],
+          transitions: { b1: 'ask_estado' },
+          onFreeText: 'reprompt',
+        },
+        ask_estado: {
+          id: 'ask_estado',
+          type: 'text_input',
+          body: '¿De qué estado nos escribes?',
+          storeAs: 'estado',
+          matcher: { dictionaryId: 'dic1' },
+          transitions: { jalisco: 'closing', nuevo_leon: 'closing' },
+          ...over,
+        },
+        closing: { id: 'closing', type: 'text_message', body: '¡Gracias!' },
+      },
+    }
+  }
+
+  it('text_input válido → []', () => {
+    expect(validateFlowDefinition(textInputFlow())).toEqual([])
+  })
+
+  it('body vacío → TEXT_INPUT_BODY_EMPTY', () => {
+    expect(codes(validateFlowDefinition(textInputFlow({ body: '' })))).toContain('TEXT_INPUT_BODY_EMPTY')
+  })
+
+  it('storeAs vacío → TEXT_INPUT_STOREAS_EMPTY', () => {
+    expect(codes(validateFlowDefinition(textInputFlow({ storeAs: '' })))).toContain('TEXT_INPUT_STOREAS_EMPTY')
+  })
+
+  it('matcher.dictionaryId vacío → TEXT_INPUT_DICTIONARY_MISSING', () => {
+    expect(codes(validateFlowDefinition(textInputFlow({ matcher: { dictionaryId: '' } })))).toContain('TEXT_INPUT_DICTIONARY_MISSING')
+  })
+
+  it('transitions a nodo inexistente → NODE_REF_NOT_FOUND', () => {
+    expect(codes(validateFlowDefinition(textInputFlow({ transitions: { jalisco: 'no_existe' } })))).toContain('NODE_REF_NOT_FOUND')
+  })
+
+  it('assignment inválido → ASSIGNMENT_INVALID', () => {
+    const badAssignment = { mode: 'executive', executiveId: '' } as unknown as AssignmentDirective
+    expect(codes(validateFlowDefinition(textInputFlow({ assignment: badAssignment })))).toContain('ASSIGNMENT_INVALID')
+  })
+
+  it('assignment válido no genera issues', () => {
+    const assignment: AssignmentDirective = { mode: 'manual' }
+    expect(validateFlowDefinition(textInputFlow({ assignment }))).toEqual([])
+  })
+
+  it('assignmentOverrides con directiva inválida → ASSIGNMENT_INVALID', () => {
+    const overrides = { jalisco: { mode: 'executive', executiveId: '' } as unknown as AssignmentDirective }
+    expect(codes(validateFlowDefinition(textInputFlow({ assignmentOverrides: overrides })))).toContain('ASSIGNMENT_INVALID')
+  })
+
+  it('ciclo que incluye text_input → CYCLE', () => {
+    const flow: FlowDefinition = {
+      nodes: {
+        welcome: {
+          id: 'welcome',
+          type: 'interactive_buttons',
+          body: '¿?',
+          buttons: [{ id: 'b1', title: 'Ir' }],
+          transitions: { b1: 'ask' },
+          onFreeText: 'reprompt',
+        },
+        ask: {
+          id: 'ask',
+          type: 'text_input',
+          body: '¿?',
+          storeAs: 'x',
+          matcher: { dictionaryId: 'd' },
+          transitions: { a: 'welcome' },
+        },
+      },
+    }
+    expect(codes(validateFlowDefinition(flow))).toContain('CYCLE')
+  })
+})
+
+describe('validateFlowDefinition — text_input defaultTransition', () => {
+  function flow(over: Partial<{ defaultTransition: string; transitions: Record<string, string> }> = {}): FlowDefinition {
+    return {
+      nodes: {
+        welcome: { id: 'welcome', type: 'interactive_buttons', body: '?', buttons: [{ id: 'b1', title: 'Ir' }], transitions: { b1: 'ask_estado' }, onFreeText: 'reprompt' },
+        ask_estado: {
+          id: 'ask_estado', type: 'text_input', body: '¿De qué estado?', storeAs: 'estado',
+          matcher: { dictionaryId: 'd1' },
+          transitions: over.transitions ?? {},
+          defaultTransition: over.defaultTransition,
+        },
+        closing: { id: 'closing', type: 'text_message', body: '¡Gracias!' },
+      },
+    }
+  }
+
+  it('defaultTransition que apunta a nodo existente es válido', () => {
+    expect(validateFlowDefinition(flow({ defaultTransition: 'closing' }))).toEqual([])
+  })
+  it('defaultTransition a nodo inexistente → NODE_REF_NOT_FOUND', () => {
+    expect(codes(validateFlowDefinition(flow({ defaultTransition: 'no_existe' })))).toContain('NODE_REF_NOT_FOUND')
+  })
+  it('sin defaultTransition ni transitions es válido (la pregunta es terminal)', () => {
+    expect(validateFlowDefinition(flow())).toEqual([])
+  })
+  it('ciclo vía defaultTransition → CYCLE', () => {
+    expect(codes(validateFlowDefinition(flow({ defaultTransition: 'welcome' })))).toContain('CYCLE')
+  })
+})
+
+describe('validateFlowDefinition — free_text', () => {
+  function flow(over: Partial<{ body: string; storeAs: string; nextNodeId?: string }> = {}): FlowDefinition {
+    return {
+      nodes: {
+        welcome: { id: 'welcome', type: 'interactive_buttons', body: '?', buttons: [{ id: 'b1', title: 'Ir' }], transitions: { b1: 'capture' }, onFreeText: 'reprompt' },
+        capture: { id: 'capture', type: 'free_text', body: over.body ?? 'Déjame tu nombre', storeAs: over.storeAs ?? 'nombre', nextNodeId: over.nextNodeId },
+      },
+    }
+  }
+  it('free_text válido → []', () => expect(validateFlowDefinition(flow())).toEqual([]))
+  it('con nextNodeId válido → []', () => {
+    const f = flow({ nextNodeId: 'welcome' })
+    ;(f.nodes.welcome as { transitions: Record<string, string> }).transitions = { b1: 'closing' }
+    f.nodes.closing = { id: 'closing', type: 'text_message', body: 'gracias' } as never
+    // recoloca capture.nextNodeId a closing
+    ;(f.nodes.capture as { nextNodeId?: string }).nextNodeId = 'closing'
+    expect(validateFlowDefinition(f)).toEqual([])
+  })
+  it('body vacío → FREE_TEXT_BODY_EMPTY', () => expect(codes(validateFlowDefinition(flow({ body: '' })))).toContain('FREE_TEXT_BODY_EMPTY'))
+  it('storeAs vacío → FREE_TEXT_STOREAS_EMPTY', () => expect(codes(validateFlowDefinition(flow({ storeAs: '' })))).toContain('FREE_TEXT_STOREAS_EMPTY'))
+  it('nextNodeId a inexistente → NODE_REF_NOT_FOUND', () => expect(codes(validateFlowDefinition(flow({ nextNodeId: 'no_existe' })))).toContain('NODE_REF_NOT_FOUND'))
 })
