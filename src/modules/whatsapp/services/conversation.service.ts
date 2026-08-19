@@ -1,3 +1,4 @@
+import type { WhatsAppProvider } from '../../../shared/whatsapp/whatsapp-provider.interface'
 import type { WhatsAppSender } from '../../../shared/whatsapp/whatsapp-sender.interface'
 import type {
   NormalizedInboundEvent,
@@ -10,6 +11,23 @@ import type {
   WhatsAppConversationRepositoryWidePort,
   WhatsAppMessageRepositoryWidePort,
 } from '../../leads/types/leads.types'
+import type { WhatsAppMessage } from '../../../entities/whatsapp/whatsapp-message.entity'
+import { HttpError } from '../../auth/http-error'
+import type { RealtimeBus } from '../realtime/realtime-bus'
+import type { MessageRealtimePayload } from '../realtime/types'
+
+function toMessagePayload(message: WhatsAppMessage): MessageRealtimePayload {
+  return {
+    id: message.id,
+    conversationId: message.conversationId,
+    direction: message.direction,
+    providerMessageId: message.providerMessageId,
+    type: message.type,
+    bodyText: message.bodyText,
+    status: message.status as MessageRealtimePayload['status'],
+    sentAt: message.sentAt.toISOString(),
+  }
+}
 
 export type ConversationServiceDeps = {
   contacts: WhatsAppContactRepositoryPort
@@ -18,6 +36,7 @@ export type ConversationServiceDeps = {
   flowEngine?: {
     handleInbound(sender: WhatsAppSender, ctx: InboundFlowContext): Promise<void>
   }
+  realtimeBus?: RealtimeBus
 }
 
 export class ConversationService {
@@ -39,6 +58,22 @@ export class ConversationService {
     }
   }
 
+  private publishConversationUpdated(
+    conversationId: string,
+    lastMessageAt: Date,
+    lastMessageDirection: 'inbound' | 'outbound'
+  ): void {
+    this.deps.realtimeBus?.publish({
+      type: 'conversation.updated',
+      payload: {
+        conversationId,
+        lastMessageAt: lastMessageAt.toISOString(),
+        lastMessageDirection,
+        needsReply: lastMessageDirection === 'inbound',
+      },
+    })
+  }
+
   private async handleInboundMessage(
     message: NormalizedMessage
   ): Promise<InboundFlowContext | null> {
@@ -56,7 +91,7 @@ export class ConversationService {
 
     const type = message.type === 'interactive' ? 'interactive' : message.type
 
-    await this.deps.messages.create({
+    const savedMessage = await this.deps.messages.create({
       conversationId: conversation.id,
       direction: 'inbound',
       providerMessageId: message.providerMessageId,
@@ -72,6 +107,15 @@ export class ConversationService {
     })
 
     await this.deps.conversations.touchLastMessage(conversation.id, message.timestamp, 'inbound')
+
+    this.deps.realtimeBus?.publish({
+      type: 'message.created',
+      payload: {
+        conversationId: conversation.id,
+        message: toMessagePayload(savedMessage as unknown as WhatsAppMessage),
+      },
+    })
+    this.publishConversationUpdated(conversation.id, message.timestamp, 'inbound')
 
     return {
       conversationId: conversation.id,
@@ -96,5 +140,98 @@ export class ConversationService {
     } else {
       await this.deps.messages.updateStatus(status.providerMessageId, status.status)
     }
+  }
+
+  async sendTextMessage(
+    provider: WhatsAppProvider,
+    input: { conversationId?: string; toWaId?: string; text: string }
+  ): Promise<{ providerMessageId: string; conversationId: string }> {
+    let conversation =
+      input.conversationId != null
+        ? await this.deps.conversations.findById(input.conversationId)
+        : null
+
+    if (input.conversationId && !conversation) {
+      throw new HttpError('Conversation not found', 404, 'CONVERSATION_NOT_FOUND')
+    }
+
+    const toWaId = conversation?.contactWaId ?? input.toWaId?.replace(/\D/g, '')
+
+    if (!toWaId) {
+      throw new HttpError('Provide conversationId or toWaId', 400, 'INVALID_RECIPIENT')
+    }
+
+    if (!conversation) {
+      const contact = await this.deps.contacts.upsert(toWaId)
+      conversation =
+        (await this.deps.conversations.findOpenByContactId(contact.id)) ??
+        (await this.deps.conversations.createOpen(contact.id))
+      conversation = (await this.deps.conversations.findById(conversation.id))!
+    }
+
+    const result = await provider.sendTextMessage({
+      toWaId: conversation.contactWaId,
+      text: input.text,
+    })
+
+    const sentAt = new Date()
+    const savedMessage = await this.deps.messages.create({
+      conversationId: conversation.id,
+      direction: 'outbound',
+      providerMessageId: result.providerMessageId,
+      type: 'text',
+      bodyText: input.text,
+      status: 'pending',
+      sentAt,
+      metadata: {},
+    })
+
+    await this.deps.conversations.touchLastMessage(conversation.id, sentAt, 'outbound')
+
+    this.deps.realtimeBus?.publish({
+      type: 'message.created',
+      payload: {
+        conversationId: conversation.id,
+        message: toMessagePayload(savedMessage as unknown as WhatsAppMessage),
+      },
+    })
+    this.publishConversationUpdated(conversation.id, sentAt, 'outbound')
+
+    return { providerMessageId: result.providerMessageId, conversationId: conversation.id }
+  }
+
+  async listMessages(
+    conversationId: string,
+    limit: number,
+    cursor?: string
+  ): Promise<
+    {
+      id: string
+      conversationId: string
+      direction: 'inbound' | 'outbound'
+      providerMessageId: string
+      type: string
+      bodyText: string | null
+      status: string
+      sentAt: string
+    }[]
+  > {
+    const conversation = await this.deps.conversations.findById(conversationId)
+    if (!conversation) {
+      throw new HttpError('Conversation not found', 404, 'CONVERSATION_NOT_FOUND')
+    }
+
+    const rows = await this.deps.messages.listByConversation(conversationId, limit, cursor)
+
+    return rows.map((m) => ({
+      id: m.id,
+      conversationId: m.conversationId,
+      direction: m.direction,
+      providerMessageId: m.providerMessageId,
+      type: m.type,
+      bodyText: m.bodyText,
+      status: m.status,
+      sentAt: m.sentAt.toISOString(),
+    }))
   }
 }

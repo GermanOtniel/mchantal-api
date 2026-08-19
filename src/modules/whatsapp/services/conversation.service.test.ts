@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { ConversationService } from './conversation.service'
+import { HttpError } from '../../auth/http-error'
+import type { WhatsAppProvider } from '../../../shared/whatsapp/whatsapp-provider.interface'
 import type { WhatsAppSender } from '../../../shared/whatsapp/whatsapp-sender.interface'
 import type { NormalizedInboundEvent, NormalizedMessage, NormalizedMessageStatus } from '../../../shared/whatsapp/types/inbound.types'
 import type {
@@ -10,6 +12,8 @@ import type {
   WhatsAppConversationRepositoryWidePort,
   WhatsAppMessageRepositoryWidePort,
 } from '../../leads/types/leads.types'
+import type { RealtimeBus } from '../realtime/realtime-bus'
+import type { WhatsAppRealtimeEvent } from '../realtime/types'
 
 function msg(over: Partial<NormalizedMessage>): NormalizedMessage {
   return { providerMessageId: 'in-1', waId: '12345', timestamp: new Date('2026-01-01T00:00:00Z'), type: 'text', text: 'hola', ...over }
@@ -19,14 +23,25 @@ function status(over: Partial<NormalizedMessageStatus>): NormalizedMessageStatus
   return { providerMessageId: 'out-1', status: 'delivered', timestamp: new Date(), ...over }
 }
 
+function makeRealtimeBus(): RealtimeBus & { published: WhatsAppRealtimeEvent[] } {
+  const published: WhatsAppRealtimeEvent[] = []
+  return {
+    published,
+    publish: vi.fn((e: WhatsAppRealtimeEvent) => { published.push(e) }),
+    subscribe: vi.fn(() => () => {}),
+    close: vi.fn(async () => {}),
+  } as unknown as RealtimeBus & { published: WhatsAppRealtimeEvent[] }
+}
+
 function makeDeps(over: Partial<{
   contacts: WhatsAppContactRepositoryPort
   conversations: WhatsAppConversationRepositoryWidePort
   messages: WhatsAppMessageRepositoryWidePort
   flowEngine: { handleInbound: (s: WhatsAppSender, c: unknown) => Promise<void> }
+  realtimeBus: RealtimeBus
 }> = {}) {
   const contact: ContactData = { id: 'ct1', waId: '12345', profileName: 'Ana' }
-  const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '', status: 'open', leadId: null }
+  const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: null }
   return {
     contacts: { upsert: vi.fn(async () => contact) },
     conversations: {
@@ -38,12 +53,14 @@ function makeDeps(over: Partial<{
       clearNeedsReplyByLeadId: vi.fn(async () => true),
     } as WhatsAppConversationRepositoryWidePort,
     messages: {
-      create: vi.fn(async () => ({})),
+      create: vi.fn(async () => ({ id: 'in-m', conversationId: 'conv1', direction: 'inbound', providerMessageId: 'in-1', type: 'text', bodyText: 'hola', status: 'delivered', metadata: {}, sentAt: new Date('2026-01-01T00:00:00Z') } as MessageData)),
       findByProviderMessageId: vi.fn(async () => null),
       updateStatus: vi.fn(async () => {}),
       updateStatusAndMetadata: vi.fn(async () => {}),
+      listByConversation: vi.fn(async () => [] as MessageData[]),
     } as WhatsAppMessageRepositoryWidePort,
     flowEngine: { handleInbound: vi.fn(async () => {}) },
+    realtimeBus: makeRealtimeBus(),
     ...over,
   }
 }
@@ -130,5 +147,89 @@ describe('ConversationService.processInboundEvents — status', () => {
     const svc = new ConversationService(deps)
     await svc.processInboundEvents([{ kind: 'status', status: status({}) }], {} as WhatsAppSender)
     expect(deps.messages.updateStatus).not.toHaveBeenCalled()
+  })
+})
+
+describe('ConversationService.sendTextMessage', () => {
+  function makeProvider(providerMessageId = 'wa-out-1'): WhatsAppProvider {
+    return {
+      sendTextMessage: vi.fn(async () => ({ providerMessageId })),
+      sendInteractiveButtons: vi.fn(async () => ({ providerMessageId })),
+    } as unknown as WhatsAppProvider
+  }
+
+  it('con conversationId existente: envía, persiste outbound pending, toca lastMessage y publica realtime', async () => {
+    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: null }
+    const saved: MessageData = { id: 'm1', conversationId: 'conv1', direction: 'outbound', providerMessageId: 'wa-out-1', type: 'text', bodyText: 'hola', status: 'pending', metadata: {}, sentAt: new Date('2026-01-01T00:00:00Z') }
+    const deps = makeDeps({
+      conversations: { findById: vi.fn(async () => conv), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => conv), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort,
+      messages: { create: vi.fn(async () => saved), findByProviderMessageId: vi.fn(async () => null), updateStatus: vi.fn(async () => {}), updateStatusAndMetadata: vi.fn(async () => {}), listByConversation: vi.fn(async () => []) } as unknown as WhatsAppMessageRepositoryWidePort,
+    })
+    const svc = new ConversationService(deps)
+    const provider = makeProvider()
+    const res = await svc.sendTextMessage(provider, { conversationId: 'conv1', text: 'hola' })
+
+    expect(res).toEqual({ providerMessageId: 'wa-out-1', conversationId: 'conv1' })
+    expect('message' in res).toBe(false)
+    expect(provider.sendTextMessage).toHaveBeenCalledWith({ toWaId: '12345', text: 'hola' })
+    expect(deps.messages.create).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'conv1', direction: 'outbound', providerMessageId: 'wa-out-1', type: 'text', bodyText: 'hola', status: 'pending', metadata: {} }))
+    expect(deps.conversations.touchLastMessage).toHaveBeenCalledWith('conv1', expect.any(Date), 'outbound')
+    const bus = deps.realtimeBus as unknown as { published: WhatsAppRealtimeEvent[] }
+    expect(bus.published).toContainEqual({ type: 'message.created', payload: { conversationId: 'conv1', message: expect.objectContaining({ id: 'm1', direction: 'outbound', sentAt: saved.sentAt.toISOString() }) } })
+    expect(bus.published).toContainEqual({ type: 'conversation.updated', payload: { conversationId: 'conv1', lastMessageAt: expect.any(String), lastMessageDirection: 'outbound', needsReply: false } })
+  })
+
+  it('con conversationId inexistente → HttpError 404 CONVERSATION_NOT_FOUND', async () => {
+    const deps = makeDeps()
+    const svc = new ConversationService(deps)
+    await expect(svc.sendTextMessage(makeProvider(), { conversationId: 'missing', text: 'x' })).rejects.toMatchObject({ statusCode: 404, code: 'CONVERSATION_NOT_FOUND' })
+  })
+
+  it('sin conversationId ni toWaId → HttpError 400 INVALID_RECIPIENT', async () => {
+    const deps = makeDeps()
+    const svc = new ConversationService(deps)
+    await expect(svc.sendTextMessage(makeProvider(), { text: 'x' })).rejects.toMatchObject({ statusCode: 400, code: 'INVALID_RECIPIENT' })
+  })
+})
+
+describe('ConversationService.listMessages', () => {
+  it('con conversación existente → mapea filas con sentAt iso y llama listByConversation', async () => {
+    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: null }
+    const rows: MessageData[] = [
+      { id: 'm1', conversationId: 'conv1', direction: 'inbound', providerMessageId: 'in-1', type: 'text', bodyText: 'hola', status: 'delivered', metadata: {}, sentAt: new Date('2026-01-01T00:00:00Z') },
+      { id: 'm2', conversationId: 'conv1', direction: 'outbound', providerMessageId: 'out-1', type: 'text', bodyText: 'hey', status: 'pending', metadata: {}, sentAt: new Date('2026-01-02T00:00:00Z') },
+    ]
+    const deps = makeDeps({
+      conversations: { findById: vi.fn(async () => conv), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => conv), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort,
+      messages: { create: vi.fn(async () => ({})), findByProviderMessageId: vi.fn(async () => null), updateStatus: vi.fn(async () => {}), updateStatusAndMetadata: vi.fn(async () => {}), listByConversation: vi.fn(async () => rows) } as unknown as WhatsAppMessageRepositoryWidePort,
+    })
+    const svc = new ConversationService(deps)
+    const out = await svc.listMessages('conv1', 50, 'cursor-x')
+    expect(deps.messages.listByConversation).toHaveBeenCalledWith('conv1', 50, 'cursor-x')
+    expect(out).toEqual([
+      { id: 'm1', conversationId: 'conv1', direction: 'inbound', providerMessageId: 'in-1', type: 'text', bodyText: 'hola', status: 'delivered', sentAt: '2026-01-01T00:00:00.000Z' },
+      { id: 'm2', conversationId: 'conv1', direction: 'outbound', providerMessageId: 'out-1', type: 'text', bodyText: 'hey', status: 'pending', sentAt: '2026-01-02T00:00:00.000Z' },
+    ])
+  })
+
+  it('con conversación inexistente → HttpError 404', async () => {
+    const deps = makeDeps()
+    const svc = new ConversationService(deps)
+    await expect(svc.listMessages('missing', 50)).rejects.toMatchObject({ statusCode: 404, code: 'CONVERSATION_NOT_FOUND' })
+  })
+})
+
+describe('ConversationService.processInboundEvents — realtime publish', () => {
+  it('publica message.created y conversation.updated para inbound', async () => {
+    const saved: MessageData = { id: 'in-m', conversationId: 'conv1', direction: 'inbound', providerMessageId: 'in-1', type: 'text', bodyText: 'hola', status: 'delivered', metadata: {}, sentAt: new Date('2026-01-01T00:00:00Z') }
+    const deps = makeDeps({
+      messages: { create: vi.fn(async () => saved), findByProviderMessageId: vi.fn(async () => null), updateStatus: vi.fn(async () => {}), updateStatusAndMetadata: vi.fn(async () => {}), listByConversation: vi.fn(async () => []) } as unknown as WhatsAppMessageRepositoryWidePort,
+    })
+    const svc = new ConversationService(deps)
+    const ts = new Date('2026-01-01T00:00:00Z')
+    await svc.processInboundEvents([{ kind: 'message', message: msg({ providerMessageId: 'in-1', timestamp: ts }) }], {} as WhatsAppSender)
+    const bus = deps.realtimeBus as unknown as { published: WhatsAppRealtimeEvent[] }
+    expect(bus.published).toContainEqual({ type: 'message.created', payload: { conversationId: 'conv1', message: expect.objectContaining({ id: 'in-m', direction: 'inbound', sentAt: '2026-01-01T00:00:00.000Z' }) } })
+    expect(bus.published).toContainEqual({ type: 'conversation.updated', payload: { conversationId: 'conv1', lastMessageAt: ts.toISOString(), lastMessageDirection: 'inbound', needsReply: true } })
   })
 })
