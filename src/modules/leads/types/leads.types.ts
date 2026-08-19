@@ -40,7 +40,7 @@ export type LeadFlowStateData = {
   campaignLeadId: string
   currentNodeId: string
   context: Record<string, unknown>
-  status: 'active' | 'completed'
+  status: 'active' | 'paused' | 'completed'
   lastInteractionAt: Date
   completedAt?: Date | null
 }
@@ -74,7 +74,7 @@ export type CreateFlowStateData = {
   campaignLeadId: string
   currentNodeId: string
   context: Record<string, unknown>
-  status: 'active' | 'completed'
+  status: 'active' | 'paused' | 'completed'
   lastInteractionAt: Date
 }
 
