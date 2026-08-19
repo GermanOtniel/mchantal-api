@@ -1,5 +1,8 @@
 import type { FlowDefinition } from '../../campaigns/types/flow.types'
 import type { NormalizedMessage } from '../../../shared/whatsapp/types/inbound.types'
+import type { LeadEventType } from '../../../entities/leads/lead-event.entity'
+
+export type { LeadEventType }
 import type { AssignmentDirective, AssignmentResult, LeadAssignmentContext } from '../../executives/types/assignment.types'
 import type { MatcherDictionaryData } from '../../matcher-dictionaries/types/dictionary.types'
 
@@ -242,4 +245,21 @@ export type LeadsPageResponse = {
 export type LeadFilterOptions = {
   campaigns: { id: string; name: string }[]
   executives: { id: string; fullName: string }[]
+}
+
+export type LeadEventData = {
+  id: string
+  leadId: string
+  type: LeadEventType
+  fromValue: string | null
+  toValue: string | null
+  reason: string | null
+  milestoneKind: string | null
+  actorUserId: string | null
+  createdAt: Date
+}
+
+export interface LeadEventsRepositoryPort {
+  record(data: Omit<LeadEventData, 'id' | 'createdAt'> & { createdAt?: Date }): Promise<LeadEventData>
+  listByLead(leadId: string): Promise<LeadEventData[]>
 }
