@@ -6,8 +6,8 @@ describe('permissions catalog — leads listing (Scope A)', () => {
     expect(PERMISSIONS.LEADS_READ).toBe('leads.read')
     expect(PERMISSIONS.LEADS_READ_ALL).toBe('leads.read.all')
     expect(PERMISSIONS.LEADS_FILTER_CAMPAIGN).toBe('leads.filter.campaign')
-    expect(PERMISSIONS.LEADS_FILTER_EXECUTIVE).toBe('leads.filter.executive')
     expect(PERMISSIONS.LEADS_FILTER_STATUS).toBe('leads.filter.status')
+    expect(PERMISSIONS.LEADS_FILTER_ASSIGNMENT).toBe('leads.filter.assignment')
     expect(PERMISSIONS.LEADS_CLEAR_NEEDS_REPLY).toBe('leads.clear_needs_reply')
   })
 
@@ -15,14 +15,14 @@ describe('permissions catalog — leads listing (Scope A)', () => {
     const keys = PERMISSION_CATALOG.map((p) => p.key)
     expect(keys).toContain('leads.read.all')
     expect(keys).toContain('leads.filter.campaign')
-    expect(keys).toContain('leads.filter.executive')
     expect(keys).toContain('leads.filter.status')
+    expect(keys).toContain('leads.filter.assignment')
     expect(keys).toContain('leads.clear_needs_reply')
     for (const key of [
       'leads.read.all',
       'leads.filter.campaign',
-      'leads.filter.executive',
       'leads.filter.status',
+      'leads.filter.assignment',
       'leads.clear_needs_reply',
     ]) {
       const def = PERMISSION_CATALOG.find((p) => p.key === key)!
@@ -35,6 +35,6 @@ describe('permissions catalog — leads listing (Scope A)', () => {
     const superAdminKeys = SYSTEM_ROLES.SUPER_ADMIN.permissionKeys
     expect(superAdminKeys).toContain('leads.read.all')
     expect(superAdminKeys).toContain('leads.clear_needs_reply')
-    expect(SYSTEM_ROLES.GENERAL_ADMIN.permissionKeys).toContain('leads.filter.executive')
+    expect(SYSTEM_ROLES.GENERAL_ADMIN.permissionKeys).toContain('leads.filter.assignment')
   })
 })

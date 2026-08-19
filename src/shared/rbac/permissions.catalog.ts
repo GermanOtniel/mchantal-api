@@ -6,8 +6,8 @@ export const PERMISSIONS = {
   LEADS_READ: 'leads.read',
   LEADS_READ_ALL: 'leads.read.all',
   LEADS_FILTER_CAMPAIGN: 'leads.filter.campaign',
-  LEADS_FILTER_EXECUTIVE: 'leads.filter.executive',
   LEADS_FILTER_STATUS: 'leads.filter.status',
+  LEADS_FILTER_ASSIGNMENT: 'leads.filter.assignment',
   LEADS_CLEAR_NEEDS_REPLY: 'leads.clear_needs_reply',
 } as const
 
@@ -58,9 +58,9 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     description: 'Filtrar listado de leads por campaña',
   },
   {
-    key: PERMISSIONS.LEADS_FILTER_EXECUTIVE,
+    key: PERMISSIONS.LEADS_FILTER_ASSIGNMENT,
     module: 'leads',
-    description: 'Filtrar listado de leads por ejecutivo',
+    description: 'Filtrar listado de leads por asignación (sin asignar o por ejecutivo)',
   },
   {
     key: PERMISSIONS.LEADS_FILTER_STATUS,
