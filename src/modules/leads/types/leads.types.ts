@@ -52,6 +52,9 @@ export type ConversationData = {
   contactWaId: string
   status: 'open' | 'closed'
   leadId: string | null
+  lastMessageAt: Date | null
+  lastMessageDirection: 'inbound' | 'outbound' | null
+  needsReplyClearedAt: Date | null
 }
 
 export type MessageCreateData = {
@@ -210,6 +213,7 @@ export interface WhatsAppMessageRepositoryWidePort
     limit: number,
     cursor?: string
   ): Promise<MessageData[]>
+  countInboundByConversation(conversationId: string): Promise<number>
 }
 
 export type ListLeadsQuery = {

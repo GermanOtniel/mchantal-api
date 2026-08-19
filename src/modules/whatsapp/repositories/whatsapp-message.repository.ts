@@ -77,4 +77,8 @@ export class WhatsAppMessageRepository implements WhatsAppMessageRepositoryWideP
     const rows = await qb.getMany()
     return rows.map(toData)
   }
+
+  async countInboundByConversation(conversationId: string): Promise<number> {
+    return this.repo.count({ where: { conversationId, direction: 'inbound' } })
+  }
 }

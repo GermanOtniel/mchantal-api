@@ -9,6 +9,9 @@ import type {
   CampaignLeadRepositoryPort,
   ContactData,
   ConversationData,
+  LeadEventsRepositoryPort,
+  LeadFlowStateData,
+  LeadFlowStateRepositoryPort,
   MessageData,
   WhatsAppContactRepositoryPort,
   WhatsAppConversationRepositoryWidePort,
@@ -53,11 +56,13 @@ function makeDeps(over: Partial<{
   conversations: WhatsAppConversationRepositoryWidePort
   messages: WhatsAppMessageRepositoryWidePort
   campaignLeads: CampaignLeadRepositoryPort
+  flowStates: LeadFlowStateRepositoryPort
+  leadEvents: LeadEventsRepositoryPort
   flowEngine: { handleInbound: (s: WhatsAppSender, c: unknown) => Promise<void> }
   realtimeBus: RealtimeBus
 }> = {}) {
   const contact: ContactData = { id: 'ct1', waId: '12345', profileName: 'Ana' }
-  const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: null }
+  const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: null, lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null }
   return {
     contacts: { upsert: vi.fn(async () => contact) },
     conversations: {
@@ -74,8 +79,11 @@ function makeDeps(over: Partial<{
       updateStatus: vi.fn(async () => {}),
       updateStatusAndMetadata: vi.fn(async () => {}),
       listByConversation: vi.fn(async () => [] as MessageData[]),
+      countInboundByConversation: vi.fn(async () => 0),
     } as WhatsAppMessageRepositoryWidePort,
     campaignLeads: { findById: vi.fn(async () => null) } as CampaignLeadRepositoryPort,
+    flowStates: { findByCampaignLeadId: vi.fn(async () => null), save: vi.fn(async (s: LeadFlowStateData) => s) } as LeadFlowStateRepositoryPort,
+    leadEvents: { record: vi.fn(async (d: unknown) => d) } as LeadEventsRepositoryPort,
     flowEngine: { handleInbound: vi.fn(async () => {}) },
     realtimeBus: makeRealtimeBus(),
     ...over,
@@ -108,7 +116,7 @@ describe('ConversationService.processInboundEvents — mensaje', () => {
   })
 
   it('si no hay conversación abierta, crea una nueva', async () => {
-    const deps = makeDeps({ conversations: { findById: vi.fn(async () => null), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => ({ id: 'conv-new', contactId: 'ct1', contactWaId: '', status: 'open', leadId: null })), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort })
+    const deps = makeDeps({ conversations: { findById: vi.fn(async () => null), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => ({ id: 'conv-new', contactId: 'ct1', contactWaId: '', status: 'open', leadId: null, lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null })), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort })
     const svc = new ConversationService(deps)
     await svc.processInboundEvents([{ kind: 'message', message: msg({}) }], {} as WhatsAppSender)
     expect(deps.conversations.createOpen).toHaveBeenCalledWith('ct1')
@@ -176,11 +184,11 @@ describe('ConversationService.sendTextMessage', () => {
   }
 
   it('con conversationId existente: envía, persiste outbound pending, toca lastMessage y publica realtime', async () => {
-    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: null }
+    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: null, lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null }
     const saved: MessageData = { id: 'm1', conversationId: 'conv1', direction: 'outbound', providerMessageId: 'wa-out-1', type: 'text', bodyText: 'hola', status: 'pending', metadata: {}, sentAt: new Date('2026-01-01T00:00:00Z') }
     const deps = makeDeps({
       conversations: { findById: vi.fn(async () => conv), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => conv), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort,
-      messages: { create: vi.fn(async () => saved), findByProviderMessageId: vi.fn(async () => null), updateStatus: vi.fn(async () => {}), updateStatusAndMetadata: vi.fn(async () => {}), listByConversation: vi.fn(async () => []) } as unknown as WhatsAppMessageRepositoryWidePort,
+      messages: { create: vi.fn(async () => saved), findByProviderMessageId: vi.fn(async () => null), updateStatus: vi.fn(async () => {}), updateStatusAndMetadata: vi.fn(async () => {}), listByConversation: vi.fn(async () => []), countInboundByConversation: vi.fn(async () => 0) } as unknown as WhatsAppMessageRepositoryWidePort,
     })
     const svc = new ConversationService(deps)
     const provider = makeProvider()
@@ -209,8 +217,8 @@ describe('ConversationService.sendTextMessage', () => {
   })
 
   it('solo toWaId (con conversación abierta existente): upsert contacto con waId sin dígitos, reutiliza conversación, refetch por findById, envía con contactWaId refetched, publica realtime', async () => {
-    const existingConv: ConversationData = { id: 'conv-by-contact', contactId: 'ct-toWaId', contactWaId: '5215512345678', status: 'open', leadId: null }
-    const refetchedConv: ConversationData = { id: 'conv-by-contact', contactId: 'ct-toWaId', contactWaId: '5215512345678', status: 'open', leadId: null }
+    const existingConv: ConversationData = { id: 'conv-by-contact', contactId: 'ct-toWaId', contactWaId: '5215512345678', status: 'open', leadId: null, lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null }
+    const refetchedConv: ConversationData = { id: 'conv-by-contact', contactId: 'ct-toWaId', contactWaId: '5215512345678', status: 'open', leadId: null, lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null }
     const saved: MessageData = { id: 'm-out', conversationId: 'conv-by-contact', direction: 'outbound', providerMessageId: 'wa-out-1', type: 'text', bodyText: 'hola', status: 'pending', metadata: {}, sentAt: new Date('2026-01-01T00:00:00Z') }
     const contacts = { upsert: vi.fn(async () => ({ id: 'ct-toWaId', waId: '5215512345678', profileName: null }) as ContactData) }
     const conversations = {
@@ -221,7 +229,7 @@ describe('ConversationService.sendTextMessage', () => {
       touchLastMessage: vi.fn(async () => {}),
       clearNeedsReplyByLeadId: vi.fn(async () => true),
     } as unknown as WhatsAppConversationRepositoryWidePort
-    const deps = makeDeps({ contacts, conversations, messages: { create: vi.fn(async () => saved), findByProviderMessageId: vi.fn(async () => null), updateStatus: vi.fn(async () => {}), updateStatusAndMetadata: vi.fn(async () => {}), listByConversation: vi.fn(async () => []) } as unknown as WhatsAppMessageRepositoryWidePort })
+    const deps = makeDeps({ contacts, conversations, messages: { create: vi.fn(async () => saved), findByProviderMessageId: vi.fn(async () => null), updateStatus: vi.fn(async () => {}), updateStatusAndMetadata: vi.fn(async () => {}), listByConversation: vi.fn(async () => []), countInboundByConversation: vi.fn(async () => 0) } as unknown as WhatsAppMessageRepositoryWidePort })
     const svc = new ConversationService(deps)
     const provider = makeProvider('wa-out-1')
     const res = await svc.sendTextMessage(provider, { toWaId: '+52 1 55 1234 5678', text: 'hola' })
@@ -240,8 +248,8 @@ describe('ConversationService.sendTextMessage', () => {
   })
 
   it('solo toWaId (sin conversación abierta): upsert contacto y llama createOpen, luego refetch', async () => {
-    const createdConv: ConversationData = { id: 'conv-new-toWaId', contactId: 'ct-toWaId', contactWaId: '', status: 'open', leadId: null }
-    const refetchedConv: ConversationData = { id: 'conv-new-toWaId', contactId: 'ct-toWaId', contactWaId: '5215512345678', status: 'open', leadId: null }
+    const createdConv: ConversationData = { id: 'conv-new-toWaId', contactId: 'ct-toWaId', contactWaId: '', status: 'open', leadId: null, lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null }
+    const refetchedConv: ConversationData = { id: 'conv-new-toWaId', contactId: 'ct-toWaId', contactWaId: '5215512345678', status: 'open', leadId: null, lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null }
     const saved: MessageData = { id: 'm-out', conversationId: 'conv-new-toWaId', direction: 'outbound', providerMessageId: 'wa-out-1', type: 'text', bodyText: 'hola', status: 'pending', metadata: {}, sentAt: new Date('2026-01-01T00:00:00Z') }
     const contacts = { upsert: vi.fn(async () => ({ id: 'ct-toWaId', waId: '5215512345678', profileName: null }) as ContactData) }
     const conversations = {
@@ -252,7 +260,7 @@ describe('ConversationService.sendTextMessage', () => {
       touchLastMessage: vi.fn(async () => {}),
       clearNeedsReplyByLeadId: vi.fn(async () => true),
     } as unknown as WhatsAppConversationRepositoryWidePort
-    const deps = makeDeps({ contacts, conversations, messages: { create: vi.fn(async () => saved), findByProviderMessageId: vi.fn(async () => null), updateStatus: vi.fn(async () => {}), updateStatusAndMetadata: vi.fn(async () => {}), listByConversation: vi.fn(async () => []) } as unknown as WhatsAppMessageRepositoryWidePort })
+    const deps = makeDeps({ contacts, conversations, messages: { create: vi.fn(async () => saved), findByProviderMessageId: vi.fn(async () => null), updateStatus: vi.fn(async () => {}), updateStatusAndMetadata: vi.fn(async () => {}), listByConversation: vi.fn(async () => []), countInboundByConversation: vi.fn(async () => 0) } as unknown as WhatsAppMessageRepositoryWidePort })
     const svc = new ConversationService(deps)
     const provider = makeProvider('wa-out-1')
     const res = await svc.sendTextMessage(provider, { toWaId: '+52 1 55 1234 5678', text: 'hola' })
@@ -268,7 +276,7 @@ describe('ConversationService.sendTextMessage', () => {
 
 describe('ConversationService.listMessages', () => {
   it('con conversación existente → mapea filas con sentAt iso y llama listByConversation', async () => {
-    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: null }
+    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: null, lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null }
     const rows: MessageData[] = [
       { id: 'm1', conversationId: 'conv1', direction: 'inbound', providerMessageId: 'in-1', type: 'text', bodyText: 'hola', status: 'delivered', metadata: {}, sentAt: new Date('2026-01-01T00:00:00Z') },
       { id: 'm2', conversationId: 'conv1', direction: 'outbound', providerMessageId: 'out-1', type: 'text', bodyText: 'hey', status: 'pending', metadata: {}, sentAt: new Date('2026-01-02T00:00:00Z') },
@@ -297,7 +305,7 @@ describe('ConversationService.processInboundEvents — realtime publish', () => 
   it('publica message.created y conversation.updated para inbound', async () => {
     const saved: MessageData = { id: 'in-m', conversationId: 'conv1', direction: 'inbound', providerMessageId: 'in-1', type: 'text', bodyText: 'hola', status: 'delivered', metadata: {}, sentAt: new Date('2026-01-01T00:00:00Z') }
     const deps = makeDeps({
-      messages: { create: vi.fn(async () => saved), findByProviderMessageId: vi.fn(async () => null), updateStatus: vi.fn(async () => {}), updateStatusAndMetadata: vi.fn(async () => {}), listByConversation: vi.fn(async () => []) } as unknown as WhatsAppMessageRepositoryWidePort,
+      messages: { create: vi.fn(async () => saved), findByProviderMessageId: vi.fn(async () => null), updateStatus: vi.fn(async () => {}), updateStatusAndMetadata: vi.fn(async () => {}), listByConversation: vi.fn(async () => []), countInboundByConversation: vi.fn(async () => 0) } as unknown as WhatsAppMessageRepositoryWidePort,
     })
     const svc = new ConversationService(deps)
     const ts = new Date('2026-01-01T00:00:00Z')
@@ -318,7 +326,7 @@ describe('ConversationService.assertConversationInScope', () => {
   })
 
   it('con leads.read.all → resuelve sin importar asignación del lead', async () => {
-    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: 'lead-1' }
+    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: 'lead-1', lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null }
     const deps = makeDeps({
       conversations: { findById: vi.fn(async () => conv), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => conv), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort,
       campaignLeads: { findById: vi.fn(async () => makeCampaignLead({ assignedExecutiveId: 'someone-else' })) } as CampaignLeadRepositoryPort,
@@ -331,7 +339,7 @@ describe('ConversationService.assertConversationInScope', () => {
   })
 
   it('sin read.all, lead asignado al usuario → resuelve', async () => {
-    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: 'lead-1' }
+    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: 'lead-1', lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null }
     const deps = makeDeps({
       conversations: { findById: vi.fn(async () => conv), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => conv), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort,
       campaignLeads: { findById: vi.fn(async () => makeCampaignLead({ assignedExecutiveId: 'user-1' })) } as CampaignLeadRepositoryPort,
@@ -344,7 +352,7 @@ describe('ConversationService.assertConversationInScope', () => {
   })
 
   it('sin read.all, lead asignado a otro → HttpError 404 (no 403, para no leakar existencia)', async () => {
-    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: 'lead-1' }
+    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: 'lead-1', lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null }
     const deps = makeDeps({
       conversations: { findById: vi.fn(async () => conv), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => conv), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort,
       campaignLeads: { findById: vi.fn(async () => makeCampaignLead({ assignedExecutiveId: 'someone-else' })) } as CampaignLeadRepositoryPort,
@@ -356,7 +364,7 @@ describe('ConversationService.assertConversationInScope', () => {
   })
 
   it('sin read.all, lead inexistente → HttpError 404', async () => {
-    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: 'lead-1' }
+    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: 'lead-1', lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null }
     const deps = makeDeps({
       conversations: { findById: vi.fn(async () => conv), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => conv), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort,
       campaignLeads: { findById: vi.fn(async () => null) } as CampaignLeadRepositoryPort,
@@ -368,7 +376,7 @@ describe('ConversationService.assertConversationInScope', () => {
   })
 
   it('sin read.all, conversation con leadId null → HttpError 404', async () => {
-    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: null }
+    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: null, lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null }
     const deps = makeDeps({
       conversations: { findById: vi.fn(async () => conv), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => conv), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort,
       campaignLeads: { findById: vi.fn(async () => { throw new Error('should not be called') }) } as CampaignLeadRepositoryPort,
@@ -378,5 +386,265 @@ describe('ConversationService.assertConversationInScope', () => {
       svc.assertConversationInScope('conv1', new Set<string>(), 'user-1')
     ).rejects.toMatchObject({ statusCode: 404, code: 'CONVERSATION_NOT_FOUND' })
     expect(deps.campaignLeads.findById).not.toHaveBeenCalled()
+  })
+})
+describe('ConversationService.sendTextMessage — flow pause + last_outbound milestone', () => {
+  function makeProvider(providerMessageId = 'wa-out-1'): WhatsAppProvider {
+    return {
+      sendTextMessage: vi.fn(async () => ({ providerMessageId })),
+      sendInteractiveButtons: vi.fn(async () => ({ providerMessageId })),
+    } as unknown as WhatsAppProvider
+  }
+
+  function flowState(over: Partial<LeadFlowStateData> = {}): LeadFlowStateData {
+    return {
+      id: 'fs-1',
+      campaignLeadId: 'lead-1',
+      currentNodeId: 'welcome',
+      context: {},
+      status: 'active',
+      lastInteractionAt: new Date('2026-01-01T00:00:00Z'),
+      completedAt: null,
+      ...over,
+    }
+  }
+
+  it('con lead y flowState active: pausa el flujo y registra milestone last_outbound con actor', async () => {
+    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: 'lead-1', lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null }
+    const deps = makeDeps({
+      conversations: { findById: vi.fn(async () => conv), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => conv), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort,
+      flowStates: { findByCampaignLeadId: vi.fn(async () => flowState({ status: 'active' })), save: vi.fn(async (s) => s) } as unknown as LeadFlowStateRepositoryPort,
+      leadEvents: { record: vi.fn(async (d) => d) } as unknown as LeadEventsRepositoryPort,
+    })
+    const svc = new ConversationService(deps)
+    await svc.sendTextMessage(makeProvider(), { conversationId: 'conv1', text: 'hola', actorUserId: 'user-9' })
+
+    expect(deps.leadEvents.record).toHaveBeenCalledWith(expect.objectContaining({ leadId: 'lead-1', type: 'message_milestone', milestoneKind: 'last_outbound', actorUserId: 'user-9', fromValue: null, toValue: null, reason: null }))
+    expect(deps.flowStates.save).toHaveBeenCalledWith(expect.objectContaining({ id: 'fs-1', status: 'paused' }))
+  })
+
+  it('con lead y flowState paused: NO pausa pero registra el milestone', async () => {
+    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: 'lead-1', lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null }
+    const deps = makeDeps({
+      conversations: { findById: vi.fn(async () => conv), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => conv), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort,
+      flowStates: { findByCampaignLeadId: vi.fn(async () => flowState({ status: 'paused' })), save: vi.fn(async (s) => s) } as unknown as LeadFlowStateRepositoryPort,
+      leadEvents: { record: vi.fn(async (d) => d) } as unknown as LeadEventsRepositoryPort,
+    })
+    const svc = new ConversationService(deps)
+    await svc.sendTextMessage(makeProvider(), { conversationId: 'conv1', text: 'hola', actorUserId: 'user-9' })
+
+    expect(deps.flowStates.save).not.toHaveBeenCalled()
+    expect(deps.leadEvents.record).toHaveBeenCalledWith(expect.objectContaining({ milestoneKind: 'last_outbound' }))
+  })
+
+  it('con lead y flowState completed: NO pausa pero registra el milestone', async () => {
+    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: 'lead-1', lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null }
+    const deps = makeDeps({
+      conversations: { findById: vi.fn(async () => conv), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => conv), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort,
+      flowStates: { findByCampaignLeadId: vi.fn(async () => flowState({ status: 'completed' })), save: vi.fn(async (s) => s) } as unknown as LeadFlowStateRepositoryPort,
+      leadEvents: { record: vi.fn(async (d) => d) } as unknown as LeadEventsRepositoryPort,
+    })
+    const svc = new ConversationService(deps)
+    await svc.sendTextMessage(makeProvider(), { conversationId: 'conv1', text: 'hola', actorUserId: 'user-9' })
+
+    expect(deps.flowStates.save).not.toHaveBeenCalled()
+    expect(deps.leadEvents.record).toHaveBeenCalledWith(expect.objectContaining({ milestoneKind: 'last_outbound' }))
+  })
+
+  it('con lead y sin flowState (null): NO pausa, registra el milestone', async () => {
+    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: 'lead-1', lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null }
+    const deps = makeDeps({
+      conversations: { findById: vi.fn(async () => conv), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => conv), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort,
+      flowStates: { findByCampaignLeadId: vi.fn(async () => null), save: vi.fn(async (s) => s) } as unknown as LeadFlowStateRepositoryPort,
+      leadEvents: { record: vi.fn(async (d) => d) } as unknown as LeadEventsRepositoryPort,
+    })
+    const svc = new ConversationService(deps)
+    await svc.sendTextMessage(makeProvider(), { conversationId: 'conv1', text: 'hola', actorUserId: 'user-9' })
+
+    expect(deps.flowStates.save).not.toHaveBeenCalled()
+    expect(deps.leadEvents.record).toHaveBeenCalledWith(expect.objectContaining({ milestoneKind: 'last_outbound' }))
+  })
+
+  it('sin actorUserId: milestone con actorUserId null', async () => {
+    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: 'lead-1', lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null }
+    const deps = makeDeps({
+      conversations: { findById: vi.fn(async () => conv), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => conv), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort,
+      flowStates: { findByCampaignLeadId: vi.fn(async () => flowState({ status: 'active' })), save: vi.fn(async (s) => s) } as unknown as LeadFlowStateRepositoryPort,
+      leadEvents: { record: vi.fn(async (d) => d) } as unknown as LeadEventsRepositoryPort,
+    })
+    const svc = new ConversationService(deps)
+    await svc.sendTextMessage(makeProvider(), { conversationId: 'conv1', text: 'hola' })
+
+    expect(deps.leadEvents.record).toHaveBeenCalledWith(expect.objectContaining({ milestoneKind: 'last_outbound', actorUserId: null }))
+  })
+
+  it('sin leadId: no registra milestone ni pausa', async () => {
+    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: null, lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null }
+    const deps = makeDeps({
+      conversations: { findById: vi.fn(async () => conv), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => conv), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort,
+      flowStates: { findByCampaignLeadId: vi.fn(async () => flowState()), save: vi.fn(async (s) => s) } as unknown as LeadFlowStateRepositoryPort,
+      leadEvents: { record: vi.fn(async (d) => d) } as unknown as LeadEventsRepositoryPort,
+    })
+    const svc = new ConversationService(deps)
+    await svc.sendTextMessage(makeProvider(), { conversationId: 'conv1', text: 'hola', actorUserId: 'user-9' })
+
+    expect(deps.leadEvents.record).not.toHaveBeenCalled()
+    expect(deps.flowStates.save).not.toHaveBeenCalled()
+  })
+})
+
+describe('ConversationService.processInboundMessage — first_inbound + re_engagement milestones', () => {
+  function inboundConv(over: Partial<ConversationData> = {}): ConversationData {
+    return { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: 'lead-1', lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null, ...over }
+  }
+
+  it('priorInbound=0 y leadId presente: registra first_inbound', async () => {
+    const deps = makeDeps({
+      conversations: {
+        findById: vi.fn(async () => null),
+        setLead: vi.fn(async () => {}),
+        findOpenByContactId: vi.fn(async () => inboundConv()),
+        createOpen: vi.fn(async () => inboundConv()),
+        touchLastMessage: vi.fn(async () => {}),
+        clearNeedsReplyByLeadId: vi.fn(async () => true),
+      } as WhatsAppConversationRepositoryWidePort,
+      messages: {
+        create: vi.fn(async () => ({ id: 'in-m', conversationId: 'conv1', direction: 'inbound', providerMessageId: 'in-x', type: 'text', bodyText: 'hola', status: 'delivered', metadata: {}, sentAt: new Date('2026-01-01T00:00:00Z') } as MessageData)),
+        findByProviderMessageId: vi.fn(async () => null),
+        updateStatus: vi.fn(async () => {}),
+        updateStatusAndMetadata: vi.fn(async () => {}),
+        listByConversation: vi.fn(async () => []),
+        countInboundByConversation: vi.fn(async () => 0),
+      } as unknown as WhatsAppMessageRepositoryWidePort,
+      leadEvents: { record: vi.fn(async (d) => d) } as unknown as LeadEventsRepositoryPort,
+    })
+    const svc = new ConversationService(deps)
+    await svc.processInboundEvents([{ kind: 'message', message: msg({ providerMessageId: 'm-x' }) }], {} as WhatsAppSender)
+
+    expect(deps.messages.countInboundByConversation).toHaveBeenCalledWith('conv1')
+    expect(deps.leadEvents.record).toHaveBeenCalledWith(expect.objectContaining({ leadId: 'lead-1', type: 'message_milestone', milestoneKind: 'first_inbound', actorUserId: null, fromValue: null, toValue: null, reason: null }))
+  })
+
+  it('priorInbound>0: no registra first_inbound', async () => {
+    const deps = makeDeps({
+      messages: {
+        create: vi.fn(async () => ({ id: 'in-m', conversationId: 'conv1', direction: 'inbound', providerMessageId: 'in-x', type: 'text', bodyText: 'hola', status: 'delivered', metadata: {}, sentAt: new Date('2026-01-01T00:00:00Z') } as MessageData)),
+        findByProviderMessageId: vi.fn(async () => null),
+        updateStatus: vi.fn(async () => {}),
+        updateStatusAndMetadata: vi.fn(async () => {}),
+        listByConversation: vi.fn(async () => []),
+        countInboundByConversation: vi.fn(async () => 5),
+      } as unknown as WhatsAppMessageRepositoryWidePort,
+      leadEvents: { record: vi.fn(async (d) => d) } as unknown as LeadEventsRepositoryPort,
+    })
+    const svc = new ConversationService(deps)
+    await svc.processInboundEvents([{ kind: 'message', message: msg({ providerMessageId: 'm-x' }) }], {} as WhatsAppSender)
+
+    expect(deps.leadEvents.record).not.toHaveBeenCalledWith(expect.objectContaining({ milestoneKind: 'first_inbound' }))
+  })
+
+  it('needsReplyClearedAt set y lastMessageAt null: registra re_engagement', async () => {
+    const deps = makeDeps({
+      conversations: {
+        findById: vi.fn(async () => null),
+        setLead: vi.fn(async () => {}),
+        findOpenByContactId: vi.fn(async () => inboundConv({ needsReplyClearedAt: new Date('2026-01-01T00:00:00Z'), lastMessageAt: null })),
+        createOpen: vi.fn(async () => inboundConv()),
+        touchLastMessage: vi.fn(async () => {}),
+        clearNeedsReplyByLeadId: vi.fn(async () => true),
+      } as WhatsAppConversationRepositoryWidePort,
+      messages: {
+        create: vi.fn(async () => ({ id: 'in-m', conversationId: 'conv1', direction: 'inbound', providerMessageId: 'in-x', type: 'text', bodyText: 'hola', status: 'delivered', metadata: {}, sentAt: new Date('2026-01-01T00:00:00Z') } as MessageData)),
+        findByProviderMessageId: vi.fn(async () => null),
+        updateStatus: vi.fn(async () => {}),
+        updateStatusAndMetadata: vi.fn(async () => {}),
+        listByConversation: vi.fn(async () => []),
+        countInboundByConversation: vi.fn(async () => 1),
+      } as unknown as WhatsAppMessageRepositoryWidePort,
+      leadEvents: { record: vi.fn(async (d) => d) } as unknown as LeadEventsRepositoryPort,
+    })
+    const svc = new ConversationService(deps)
+    await svc.processInboundEvents([{ kind: 'message', message: msg({ providerMessageId: 'm-x' }) }], {} as WhatsAppSender)
+
+    expect(deps.leadEvents.record).toHaveBeenCalledWith(expect.objectContaining({ leadId: 'lead-1', type: 'message_milestone', milestoneKind: 're_engagement', actorUserId: null, fromValue: null, toValue: null, reason: null }))
+  })
+
+  it('needsReplyClearedAt set y lastMessageAt <= clearedAt: registra re_engagement', async () => {
+    const cleared = new Date('2026-01-05T00:00:00Z')
+    const deps = makeDeps({
+      conversations: {
+        findById: vi.fn(async () => null),
+        setLead: vi.fn(async () => {}),
+        findOpenByContactId: vi.fn(async () => inboundConv({ needsReplyClearedAt: cleared, lastMessageAt: new Date('2026-01-03T00:00:00Z') })),
+        createOpen: vi.fn(async () => inboundConv()),
+        touchLastMessage: vi.fn(async () => {}),
+        clearNeedsReplyByLeadId: vi.fn(async () => true),
+      } as WhatsAppConversationRepositoryWidePort,
+      messages: {
+        create: vi.fn(async () => ({ id: 'in-m', conversationId: 'conv1', direction: 'inbound', providerMessageId: 'in-x', type: 'text', bodyText: 'hola', status: 'delivered', metadata: {}, sentAt: new Date('2026-01-06T00:00:00Z') } as MessageData)),
+        findByProviderMessageId: vi.fn(async () => null),
+        updateStatus: vi.fn(async () => {}),
+        updateStatusAndMetadata: vi.fn(async () => {}),
+        listByConversation: vi.fn(async () => []),
+        countInboundByConversation: vi.fn(async () => 2),
+      } as unknown as WhatsAppMessageRepositoryWidePort,
+      leadEvents: { record: vi.fn(async (d) => d) } as unknown as LeadEventsRepositoryPort,
+    })
+    const svc = new ConversationService(deps)
+    await svc.processInboundEvents([{ kind: 'message', message: msg({ providerMessageId: 'm-x' }) }], {} as WhatsAppSender)
+
+    expect(deps.leadEvents.record).toHaveBeenCalledWith(expect.objectContaining({ milestoneKind: 're_engagement' }))
+  })
+
+  it('needsReplyClearedAt null: no registra re_engagement', async () => {
+    const deps = makeDeps({
+      conversations: {
+        findById: vi.fn(async () => null),
+        setLead: vi.fn(async () => {}),
+        findOpenByContactId: vi.fn(async () => inboundConv({ needsReplyClearedAt: null })),
+        createOpen: vi.fn(async () => inboundConv()),
+        touchLastMessage: vi.fn(async () => {}),
+        clearNeedsReplyByLeadId: vi.fn(async () => true),
+      } as WhatsAppConversationRepositoryWidePort,
+      messages: {
+        create: vi.fn(async () => ({ id: 'in-m', conversationId: 'conv1', direction: 'inbound', providerMessageId: 'in-x', type: 'text', bodyText: 'hola', status: 'delivered', metadata: {}, sentAt: new Date('2026-01-01T00:00:00Z') } as MessageData)),
+        findByProviderMessageId: vi.fn(async () => null),
+        updateStatus: vi.fn(async () => {}),
+        updateStatusAndMetadata: vi.fn(async () => {}),
+        listByConversation: vi.fn(async () => []),
+        countInboundByConversation: vi.fn(async () => 3),
+      } as unknown as WhatsAppMessageRepositoryWidePort,
+      leadEvents: { record: vi.fn(async (d) => d) } as unknown as LeadEventsRepositoryPort,
+    })
+    const svc = new ConversationService(deps)
+    await svc.processInboundEvents([{ kind: 'message', message: msg({ providerMessageId: 'm-x' }) }], {} as WhatsAppSender)
+
+    expect(deps.leadEvents.record).not.toHaveBeenCalledWith(expect.objectContaining({ milestoneKind: 're_engagement' }))
+  })
+
+  it('sin leadId: no registra milestones inbound', async () => {
+    const deps = makeDeps({
+      conversations: {
+        findById: vi.fn(async () => null),
+        setLead: vi.fn(async () => {}),
+        findOpenByContactId: vi.fn(async () => inboundConv({ leadId: null })),
+        createOpen: vi.fn(async () => inboundConv({ leadId: null })),
+        touchLastMessage: vi.fn(async () => {}),
+        clearNeedsReplyByLeadId: vi.fn(async () => true),
+      } as WhatsAppConversationRepositoryWidePort,
+      messages: {
+        create: vi.fn(async () => ({ id: 'in-m', conversationId: 'conv1', direction: 'inbound', providerMessageId: 'in-x', type: 'text', bodyText: 'hola', status: 'delivered', metadata: {}, sentAt: new Date('2026-01-01T00:00:00Z') } as MessageData)),
+        findByProviderMessageId: vi.fn(async () => null),
+        updateStatus: vi.fn(async () => {}),
+        updateStatusAndMetadata: vi.fn(async () => {}),
+        listByConversation: vi.fn(async () => []),
+        countInboundByConversation: vi.fn(async () => 0),
+      } as unknown as WhatsAppMessageRepositoryWidePort,
+      leadEvents: { record: vi.fn(async (d) => d) } as unknown as LeadEventsRepositoryPort,
+    })
+    const svc = new ConversationService(deps)
+    await svc.processInboundEvents([{ kind: 'message', message: msg({ providerMessageId: 'm-x' }) }], {} as WhatsAppSender)
+
+    expect(deps.leadEvents.record).not.toHaveBeenCalled()
   })
 })

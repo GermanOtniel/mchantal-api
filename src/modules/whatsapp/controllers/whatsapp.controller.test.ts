@@ -157,7 +157,7 @@ describe('WhatsAppController.sendMessage', () => {
     await controller.sendMessage(request as never, reply as never)
 
     expect(conv.assertConversationInScope).toHaveBeenCalledWith('conv1', expect.any(Set), 'user-1')
-    expect(sendTextMessage).toHaveBeenCalledWith(expect.anything(), { conversationId: 'conv1', text: 'hola' })
+    expect(sendTextMessage).toHaveBeenCalledWith(expect.anything(), { conversationId: 'conv1', toWaId: undefined, text: 'hola', actorUserId: 'user-1' })
     expect(sent[0].status).toBe(201)
     expect(sent[0].body).toEqual({ providerMessageId: 'wa-msg-9', conversationId: 'conv1' })
   })

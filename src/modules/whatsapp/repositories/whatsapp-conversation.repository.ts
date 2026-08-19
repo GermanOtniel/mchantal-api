@@ -6,7 +6,16 @@ import type {
 } from '../../leads/types/leads.types'
 
 function toData(c: WhatsAppConversation): ConversationData {
-  return { id: c.id, contactId: c.contactId, contactWaId: '', status: c.status, leadId: c.leadId }
+  return {
+    id: c.id,
+    contactId: c.contactId,
+    contactWaId: '',
+    status: c.status,
+    leadId: c.leadId,
+    lastMessageAt: c.lastMessageAt,
+    lastMessageDirection: c.lastMessageDirection,
+    needsReplyClearedAt: c.needsReplyClearedAt,
+  }
 }
 
 export class WhatsAppConversationRepository
@@ -28,6 +37,9 @@ export class WhatsAppConversationRepository
       contactWaId: c.contact?.waId ?? '',
       status: c.status,
       leadId: c.leadId,
+      lastMessageAt: c.lastMessageAt,
+      lastMessageDirection: c.lastMessageDirection,
+      needsReplyClearedAt: c.needsReplyClearedAt,
     }
   }
 

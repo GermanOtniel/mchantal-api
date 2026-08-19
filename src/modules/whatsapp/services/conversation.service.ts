@@ -8,6 +8,8 @@ import type {
 import type { InboundFlowContext } from '../../leads/types/leads.types'
 import type {
   CampaignLeadRepositoryPort,
+  LeadEventsRepositoryPort,
+  LeadFlowStateRepositoryPort,
   MessageData,
   WhatsAppContactRepositoryPort,
   WhatsAppConversationRepositoryWidePort,
@@ -36,6 +38,8 @@ export type ConversationServiceDeps = {
   conversations: WhatsAppConversationRepositoryWidePort
   messages: WhatsAppMessageRepositoryWidePort
   campaignLeads: CampaignLeadRepositoryPort
+  flowStates: LeadFlowStateRepositoryPort
+  leadEvents: LeadEventsRepositoryPort
   flowEngine?: {
     handleInbound(sender: WhatsAppSender, ctx: InboundFlowContext): Promise<void>
   }
@@ -92,6 +96,13 @@ export class ConversationService {
       conversation = await this.deps.conversations.createOpen(contact.id)
     }
 
+    const priorInbound = await this.deps.messages.countInboundByConversation(conversation.id)
+    const isFirstInbound = priorInbound === 0
+    const isReEngagement =
+      conversation.needsReplyClearedAt != null &&
+      (conversation.lastMessageAt == null ||
+        conversation.lastMessageAt <= conversation.needsReplyClearedAt)
+
     const type = message.type === 'interactive' ? 'interactive' : message.type
 
     const savedMessage = await this.deps.messages.create({
@@ -120,6 +131,31 @@ export class ConversationService {
     })
     this.publishConversationUpdated(conversation.id, message.timestamp, 'inbound')
 
+    if (conversation.leadId) {
+      if (isFirstInbound) {
+        await this.deps.leadEvents.record({
+          leadId: conversation.leadId,
+          type: 'message_milestone',
+          fromValue: null,
+          toValue: null,
+          reason: null,
+          milestoneKind: 'first_inbound',
+          actorUserId: null,
+        })
+      }
+      if (isReEngagement) {
+        await this.deps.leadEvents.record({
+          leadId: conversation.leadId,
+          type: 'message_milestone',
+          fromValue: null,
+          toValue: null,
+          reason: null,
+          milestoneKind: 're_engagement',
+          actorUserId: null,
+        })
+      }
+    }
+
     return {
       conversationId: conversation.id,
       contactId: contact.id,
@@ -147,7 +183,7 @@ export class ConversationService {
 
   async sendTextMessage(
     provider: WhatsAppProvider,
-    input: { conversationId?: string; toWaId?: string; text: string }
+    input: { conversationId?: string; toWaId?: string; text: string; actorUserId?: string }
   ): Promise<{ providerMessageId: string; conversationId: string }> {
     let conversation =
       input.conversationId != null
@@ -203,6 +239,23 @@ export class ConversationService {
       },
     })
     this.publishConversationUpdated(conversation.id, sentAt, 'outbound')
+
+    const leadId = conversation.leadId
+    if (leadId) {
+      await this.deps.leadEvents.record({
+        leadId,
+        type: 'message_milestone',
+        fromValue: null,
+        toValue: null,
+        reason: null,
+        milestoneKind: 'last_outbound',
+        actorUserId: input.actorUserId ?? null,
+      })
+      const flowState = await this.deps.flowStates.findByCampaignLeadId(leadId)
+      if (flowState && flowState.status === 'active') {
+        await this.deps.flowStates.save({ ...flowState, status: 'paused' })
+      }
+    }
 
     return { providerMessageId: result.providerMessageId, conversationId: conversation.id }
   }
