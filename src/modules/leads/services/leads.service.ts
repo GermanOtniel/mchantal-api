@@ -4,10 +4,12 @@ import { LEAD_STATUSES } from '../types/leads.types'
 import type {
   CampaignLeadRepositoryPort,
   LeadDetailResponse,
+  LeadEventResponse,
   LeadFilterOptions,
   LeadItemResponse,
   LeadListItem,
   LeadQAItem,
+  LeadEventsRepositoryPort,
   LeadsPageResponse,
   ListLeadsQuery,
   MatcherDictionaryResolverPort,
@@ -49,6 +51,7 @@ export class LeadsService {
     private readonly flowStates: LeadFlowStateRepositoryPort,
     private readonly dictionaries: MatcherDictionaryResolverPort,
     private readonly contacts: WhatsAppContactRepositoryPort,
+    private readonly leadEvents: LeadEventsRepositoryPort,
     private readonly pageSize: number,
   ) {}
 
@@ -222,5 +225,129 @@ export class LeadsService {
       conversationId: conversation?.id ?? null,
       answers: qa,
     }
+  }
+
+  async getTimeline(input: {
+    permissions: Set<string>
+    userId: string
+    leadId: string
+  }): Promise<LeadEventResponse[]> {
+    const { permissions, userId, leadId } = input
+    if (!permissions.has(PERMISSIONS.LEADS_ATTEND)) {
+      throw new HttpError('Forbidden', 403, 'FORBIDDEN')
+    }
+    const lead = await this.campaignLeads.findById(leadId)
+    if (!lead) {
+      throw new HttpError('Lead not found', 404, 'LEAD_NOT_FOUND')
+    }
+    const scopeAll = permissions.has(PERMISSIONS.LEADS_READ_ALL)
+    if (!scopeAll && lead.assignedExecutiveId !== userId) {
+      throw new HttpError('Lead not found', 404, 'LEAD_NOT_FOUND')
+    }
+    const events = await this.leadEvents.listByLead(leadId)
+    return events.map((e) => ({ ...e, createdAt: e.createdAt.toISOString() }))
+  }
+
+  async reassign(input: {
+    permissions: Set<string>
+    userId: string
+    leadId: string
+    assigneeUserId: string | null
+    reason: string
+  }): Promise<void> {
+    const { permissions, userId, leadId, assigneeUserId, reason } = input
+    if (!permissions.has(PERMISSIONS.LEADS_REASSIGN)) {
+      throw new HttpError('Forbidden', 403, 'FORBIDDEN')
+    }
+    const lead = await this.campaignLeads.findById(leadId)
+    if (!lead) {
+      throw new HttpError('Lead not found', 404, 'LEAD_NOT_FOUND')
+    }
+    const scopeAll = permissions.has(PERMISSIONS.LEADS_READ_ALL)
+    if (!scopeAll && lead.assignedExecutiveId !== userId) {
+      throw new HttpError('Lead not found', 404, 'LEAD_NOT_FOUND')
+    }
+    if (!reason.trim()) {
+      throw new HttpError('Reason required', 400, 'REASON_REQUIRED')
+    }
+    const prev = lead.assignedExecutiveId ?? null
+    lead.assignedExecutiveId = assigneeUserId
+    lead.assignedAt = assigneeUserId ? new Date() : null
+    await this.campaignLeads.save(lead)
+    await this.leadEvents.record({
+      leadId,
+      type: 'reassignment',
+      fromValue: prev,
+      toValue: assigneeUserId,
+      reason,
+      milestoneKind: null,
+      actorUserId: userId,
+    })
+  }
+
+  async changeStatus(input: {
+    permissions: Set<string>
+    userId: string
+    leadId: string
+    status: string
+    reason: string
+  }): Promise<void> {
+    const { permissions, userId, leadId, status, reason } = input
+    if (!permissions.has(PERMISSIONS.LEADS_CHANGE_STATUS)) {
+      throw new HttpError('Forbidden', 403, 'FORBIDDEN')
+    }
+    const lead = await this.campaignLeads.findById(leadId)
+    if (!lead) {
+      throw new HttpError('Lead not found', 404, 'LEAD_NOT_FOUND')
+    }
+    const scopeAll = permissions.has(PERMISSIONS.LEADS_READ_ALL)
+    if (!scopeAll && lead.assignedExecutiveId !== userId) {
+      throw new HttpError('Lead not found', 404, 'LEAD_NOT_FOUND')
+    }
+    if (!LEAD_STATUSES.includes(status as never)) {
+      throw new HttpError('Invalid status', 400, 'INVALID_STATUS')
+    }
+    if (status === lead.status) {
+      throw new HttpError('Same status', 400, 'SAME_STATUS')
+    }
+    if (!reason.trim()) {
+      throw new HttpError('Reason required', 400, 'REASON_REQUIRED')
+    }
+    const prev = lead.status
+    lead.status = status
+    await this.campaignLeads.save(lead)
+    await this.leadEvents.record({
+      leadId,
+      type: 'status_change',
+      fromValue: prev,
+      toValue: status,
+      reason,
+      milestoneKind: null,
+      actorUserId: userId,
+    })
+  }
+
+  async resumeFlow(input: {
+    permissions: Set<string>
+    userId: string
+    leadId: string
+  }): Promise<void> {
+    const { permissions, userId, leadId } = input
+    if (!permissions.has(PERMISSIONS.LEADS_ATTEND)) {
+      throw new HttpError('Forbidden', 403, 'FORBIDDEN')
+    }
+    const lead = await this.campaignLeads.findById(leadId)
+    if (!lead) {
+      throw new HttpError('Lead not found', 404, 'LEAD_NOT_FOUND')
+    }
+    const scopeAll = permissions.has(PERMISSIONS.LEADS_READ_ALL)
+    if (!scopeAll && lead.assignedExecutiveId !== userId) {
+      throw new HttpError('Lead not found', 404, 'LEAD_NOT_FOUND')
+    }
+    const flowState = await this.flowStates.findByCampaignLeadId(leadId)
+    if (!flowState || flowState.status !== 'paused') {
+      throw new HttpError('Flow not paused', 400, 'FLOW_NOT_PAUSED')
+    }
+    await this.flowStates.save({ ...flowState, status: 'active' })
   }
 }

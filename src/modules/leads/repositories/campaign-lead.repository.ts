@@ -87,6 +87,7 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
     entity.assignmentMode = lead.assignmentMode ?? null
     entity.assignedExecutiveId = lead.assignedExecutiveId ?? null
     entity.assignedAt = lead.assignedAt ?? null
+    entity.status = lead.status
     await this.repo.save(entity)
     return lead
   }

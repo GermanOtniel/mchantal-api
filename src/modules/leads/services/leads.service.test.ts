@@ -11,6 +11,8 @@ import type {
   LeadFlowStateRepositoryPort,
   MatcherDictionaryResolverPort,
   ContactData,
+  LeadEventsRepositoryPort,
+  LeadEventData,
 } from '../types/leads.types'
 import type { MatcherDictionaryData } from '../../matcher-dictionaries/types/dictionary.types'
 import type { CampaignRepositoryPort, Campaign } from '../../campaigns/types/campaign.types'
@@ -109,6 +111,14 @@ function mkContactRepo(over: Partial<WhatsAppContactRepositoryPort> = {}): Whats
   }
 }
 
+function mkLeadEventsRepo(over: Partial<LeadEventsRepositoryPort> = {}): LeadEventsRepositoryPort {
+  return {
+    record: vi.fn(async (data) => ({ id: 'e1', createdAt: new Date('2026-01-01'), ...data }) as LeadEventData),
+    listByLead: vi.fn(async () => []),
+    ...over,
+  }
+}
+
 const PAGE_SIZE = 50
 
 function perms(...keys: string[]): Set<string> {
@@ -123,6 +133,7 @@ function mkSvc(over: {
   flowStates?: LeadFlowStateRepositoryPort
   dictionaries?: MatcherDictionaryResolverPort
   contacts?: WhatsAppContactRepositoryPort
+  leadEvents?: LeadEventsRepositoryPort
 } = {}): LeadsService {
   return new LeadsService(
     over.leadsRepo ?? mkLeadsRepo(),
@@ -132,6 +143,7 @@ function mkSvc(over: {
     over.flowStates ?? mkFlowStateRepo(),
     over.dictionaries ?? mkDictRepo(),
     over.contacts ?? mkContactRepo(),
+    over.leadEvents ?? mkLeadEventsRepo(),
     PAGE_SIZE,
   )
 }
@@ -465,5 +477,185 @@ describe('LeadsService.getLead', () => {
     expect(res.conversationId).toBe('conv-9')
     expect(res.flowState).toBe('paused')
     expect(res.contact).toEqual({ name: 'Ana', waId: '5212345678' })
+  })
+})
+// ── getTimeline ──
+
+function leadEventData(over: Partial<LeadEventData> = {}): LeadEventData {
+  return {
+    id: 'e1', leadId: 'l1', type: 'reassignment',
+    fromValue: null, toValue: 'u2', reason: 'r',
+    milestoneKind: null, actorUserId: 'u1',
+    createdAt: new Date('2026-03-01T10:00:00Z'),
+    ...over,
+  }
+}
+
+describe('LeadsService.getTimeline', () => {
+  it('sin leads.attend → 403', async () => {
+    const svc = mkSvc()
+    await expect(svc.getTimeline({ permissions: perms(PERMISSIONS.LEADS_READ), userId: 'u1', leadId: 'l1' })).rejects.toMatchObject({ statusCode: 403 })
+  })
+
+  it('lead no existe → 404', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => null) })
+    const svc = mkSvc({ leadsRepo })
+    await expect(svc.getTimeline({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })).rejects.toMatchObject({ statusCode: 404, code: 'LEAD_NOT_FOUND' })
+  })
+
+  it('sin read.all y lead asignado a otro → 404', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ assignedExecutiveId: 'u2' })) })
+    const svc = mkSvc({ leadsRepo })
+    await expect(svc.getTimeline({ permissions: perms(PERMISSIONS.LEADS_ATTEND), userId: 'u1', leadId: 'l1' })).rejects.toMatchObject({ statusCode: 404, code: 'LEAD_NOT_FOUND' })
+  })
+
+  it('retorna eventos con createdAt en ISO', async () => {
+    const leadEvents = mkLeadEventsRepo({
+      listByLead: vi.fn(async () => [
+        leadEventData({ id: 'e1', createdAt: new Date('2026-03-01T10:00:00Z') }),
+        leadEventData({ id: 'e2', type: 'status_change', createdAt: new Date('2026-03-02T11:00:00Z') }),
+      ]),
+    })
+    const svc = mkSvc({ leadEvents })
+    const res = await svc.getTimeline({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(leadEvents.listByLead).toHaveBeenCalledWith('l1')
+    expect(res).toHaveLength(2)
+    expect(res[0].createdAt).toBe(new Date('2026-03-01T10:00:00Z').toISOString())
+    expect(res[1].createdAt).toBe(new Date('2026-03-02T11:00:00Z').toISOString())
+    expect(typeof res[0].createdAt).toBe('string')
+  })
+})
+
+// ── reassign ──
+
+describe('LeadsService.reassign', () => {
+  it('sin leads.reassign → 403', async () => {
+    const svc = mkSvc()
+    await expect(svc.reassign({ permissions: perms(PERMISSIONS.LEADS_ATTEND), userId: 'u1', leadId: 'l1', assigneeUserId: 'u2', reason: 'r' })).rejects.toMatchObject({ statusCode: 403 })
+  })
+
+  it('lead no existe → 404', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => null) })
+    const svc = mkSvc({ leadsRepo })
+    await expect(svc.reassign({ permissions: perms(PERMISSIONS.LEADS_REASSIGN, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', assigneeUserId: 'u2', reason: 'r' })).rejects.toMatchObject({ statusCode: 404, code: 'LEAD_NOT_FOUND' })
+  })
+
+  it('sin read.all y lead asignado a otro → 404', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ assignedExecutiveId: 'u2' })) })
+    const svc = mkSvc({ leadsRepo })
+    await expect(svc.reassign({ permissions: perms(PERMISSIONS.LEADS_REASSIGN), userId: 'u1', leadId: 'l1', assigneeUserId: 'u3', reason: 'r' })).rejects.toMatchObject({ statusCode: 404, code: 'LEAD_NOT_FOUND' })
+  })
+
+  it('reason vacío → 400 REASON_REQUIRED', async () => {
+    const svc = mkSvc()
+    await expect(svc.reassign({ permissions: perms(PERMISSIONS.LEADS_REASSIGN, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', assigneeUserId: 'u2', reason: '   ' })).rejects.toMatchObject({ statusCode: 400, code: 'REASON_REQUIRED' })
+  })
+
+  it('reasigna a ejecutivo → save con nuevo assignee + assignedAt, record reassignment', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ assignedExecutiveId: 'u2' })) })
+    const leadEvents = mkLeadEventsRepo()
+    const svc = mkSvc({ leadsRepo, leadEvents })
+    await svc.reassign({ permissions: perms(PERMISSIONS.LEADS_REASSIGN, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', assigneeUserId: 'u3', reason: 'cambio de ejecutivo' })
+    expect(leadsRepo.save).toHaveBeenCalledWith(expect.objectContaining({ assignedExecutiveId: 'u3', assignedAt: expect.any(Date) }))
+    expect(leadEvents.record).toHaveBeenCalledWith(expect.objectContaining({
+      leadId: 'l1', type: 'reassignment', fromValue: 'u2', toValue: 'u3', reason: 'cambio de ejecutivo', milestoneKind: null, actorUserId: 'u1',
+    }))
+  })
+
+  it('reasigna a null (unassign) → toValue null, assignedAt null', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ assignedExecutiveId: 'u2' })) })
+    const leadEvents = mkLeadEventsRepo()
+    const svc = mkSvc({ leadsRepo, leadEvents })
+    await svc.reassign({ permissions: perms(PERMISSIONS.LEADS_REASSIGN, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', assigneeUserId: null, reason: 'liberar' })
+    expect(leadsRepo.save).toHaveBeenCalledWith(expect.objectContaining({ assignedExecutiveId: null, assignedAt: null }))
+    expect(leadEvents.record).toHaveBeenCalledWith(expect.objectContaining({ fromValue: 'u2', toValue: null }))
+  })
+})
+
+// ── changeStatus ──
+
+describe('LeadsService.changeStatus', () => {
+  it('sin leads.change_status → 403', async () => {
+    const svc = mkSvc()
+    await expect(svc.changeStatus({ permissions: perms(PERMISSIONS.LEADS_ATTEND), userId: 'u1', leadId: 'l1', status: 'qualified', reason: 'r' })).rejects.toMatchObject({ statusCode: 403 })
+  })
+
+  it('lead no existe → 404', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => null) })
+    const svc = mkSvc({ leadsRepo })
+    await expect(svc.changeStatus({ permissions: perms(PERMISSIONS.LEADS_CHANGE_STATUS, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', status: 'qualified', reason: 'r' })).rejects.toMatchObject({ statusCode: 404, code: 'LEAD_NOT_FOUND' })
+  })
+
+  it('sin read.all y lead asignado a otro → 404', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ assignedExecutiveId: 'u2' })) })
+    const svc = mkSvc({ leadsRepo })
+    await expect(svc.changeStatus({ permissions: perms(PERMISSIONS.LEADS_CHANGE_STATUS), userId: 'u1', leadId: 'l1', status: 'qualified', reason: 'r' })).rejects.toMatchObject({ statusCode: 404, code: 'LEAD_NOT_FOUND' })
+  })
+
+  it('status inválido → 400 INVALID_STATUS', async () => {
+    const svc = mkSvc()
+    await expect(svc.changeStatus({ permissions: perms(PERMISSIONS.LEADS_CHANGE_STATUS, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', status: 'bogus', reason: 'r' })).rejects.toMatchObject({ statusCode: 400, code: 'INVALID_STATUS' })
+  })
+
+  it('status igual al actual → 400 SAME_STATUS', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ status: 'qualified' })) })
+    const svc = mkSvc({ leadsRepo })
+    await expect(svc.changeStatus({ permissions: perms(PERMISSIONS.LEADS_CHANGE_STATUS, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', status: 'qualified', reason: 'r' })).rejects.toMatchObject({ statusCode: 400, code: 'SAME_STATUS' })
+  })
+
+  it('reason vacío → 400 REASON_REQUIRED', async () => {
+    const svc = mkSvc()
+    await expect(svc.changeStatus({ permissions: perms(PERMISSIONS.LEADS_CHANGE_STATUS, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', status: 'qualified', reason: '  ' })).rejects.toMatchObject({ statusCode: 400, code: 'REASON_REQUIRED' })
+  })
+
+  it('válido → save con nuevo status, record status_change', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ status: 'new' })) })
+    const leadEvents = mkLeadEventsRepo()
+    const svc = mkSvc({ leadsRepo, leadEvents })
+    await svc.changeStatus({ permissions: perms(PERMISSIONS.LEADS_CHANGE_STATUS, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', status: 'qualified', reason: 'calificado' })
+    expect(leadsRepo.save).toHaveBeenCalledWith(expect.objectContaining({ status: 'qualified' }))
+    expect(leadEvents.record).toHaveBeenCalledWith(expect.objectContaining({
+      leadId: 'l1', type: 'status_change', fromValue: 'new', toValue: 'qualified', reason: 'calificado', milestoneKind: null, actorUserId: 'u1',
+    }))
+  })
+})
+
+// ── resumeFlow ──
+
+describe('LeadsService.resumeFlow', () => {
+  it('sin leads.attend → 403', async () => {
+    const svc = mkSvc()
+    await expect(svc.resumeFlow({ permissions: perms(PERMISSIONS.LEADS_READ), userId: 'u1', leadId: 'l1' })).rejects.toMatchObject({ statusCode: 403 })
+  })
+
+  it('lead no existe → 404', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => null) })
+    const svc = mkSvc({ leadsRepo })
+    await expect(svc.resumeFlow({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })).rejects.toMatchObject({ statusCode: 404, code: 'LEAD_NOT_FOUND' })
+  })
+
+  it('sin read.all y lead asignado a otro → 404', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ assignedExecutiveId: 'u2' })) })
+    const svc = mkSvc({ leadsRepo })
+    await expect(svc.resumeFlow({ permissions: perms(PERMISSIONS.LEADS_ATTEND), userId: 'u1', leadId: 'l1' })).rejects.toMatchObject({ statusCode: 404, code: 'LEAD_NOT_FOUND' })
+  })
+
+  it('flowState active → 400 FLOW_NOT_PAUSED', async () => {
+    const flowStates = mkFlowStateRepo({ findByCampaignLeadId: vi.fn(async () => flowStateData({ status: 'active' })) })
+    const svc = mkSvc({ flowStates })
+    await expect(svc.resumeFlow({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })).rejects.toMatchObject({ statusCode: 400, code: 'FLOW_NOT_PAUSED' })
+  })
+
+  it('sin flowState → 400 FLOW_NOT_PAUSED', async () => {
+    const flowStates = mkFlowStateRepo({ findByCampaignLeadId: vi.fn(async () => null) })
+    const svc = mkSvc({ flowStates })
+    await expect(svc.resumeFlow({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })).rejects.toMatchObject({ statusCode: 400, code: 'FLOW_NOT_PAUSED' })
+  })
+
+  it('flowState paused → save con status active', async () => {
+    const flowStates = mkFlowStateRepo({ findByCampaignLeadId: vi.fn(async () => flowStateData({ status: 'paused' })) })
+    const svc = mkSvc({ flowStates })
+    await svc.resumeFlow({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(flowStates.save).toHaveBeenCalledWith(expect.objectContaining({ status: 'active' }))
   })
 })

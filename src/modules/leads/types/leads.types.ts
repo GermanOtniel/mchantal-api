@@ -287,6 +287,18 @@ export type LeadEventData = {
   createdAt: Date
 }
 
+export type LeadEventResponse = {
+  id: string
+  leadId: string
+  type: LeadEventType
+  fromValue: string | null
+  toValue: string | null
+  reason: string | null
+  milestoneKind: string | null
+  actorUserId: string | null
+  createdAt: string
+}
+
 export interface LeadEventsRepositoryPort {
   record(data: Omit<LeadEventData, 'id' | 'createdAt'> & { createdAt?: Date }): Promise<LeadEventData>
   listByLead(leadId: string): Promise<LeadEventData[]>
