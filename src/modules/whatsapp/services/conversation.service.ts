@@ -315,9 +315,12 @@ export class ConversationService {
 
   /**
    * Verifica que el usuario pueda acceder a la conversación. Un usuario con
-   * `leads.read.all` accede a todo. Sin ese permiso, sólo puede acceder a
-   * conversaciones vinculadas a un lead asignado a él. Lanza 404 (no 403)
-   * para no leakar la existencia de conversaciones ajenas.
+   * `leads.read.all` accede a todo. Sin ese permiso, puede acceder si tiene
+   * CUALQUIER lead del contacto de la conversación asignado a él — no basta
+   * con `conversation.leadId` (que apunta al último lead del contacto, que
+   * podría estar asignado a otro ejecutivo cuando el contacto tiene varios
+   * leads). Lanza 404 (no 403) para no leakar la existencia de conversaciones
+   * ajenas.
    */
   async assertConversationInScope(
     conversationId: string,
@@ -329,12 +332,11 @@ export class ConversationService {
       throw new HttpError('Conversation not found', 404, 'CONVERSATION_NOT_FOUND')
     }
     if (permissions.has(PERMISSIONS.LEADS_READ_ALL)) return
-    const leadId = conversation.leadId
-    if (!leadId) {
-      throw new HttpError('Conversation not found', 404, 'CONVERSATION_NOT_FOUND')
-    }
-    const lead = await this.deps.campaignLeads.findById(leadId)
-    if (!lead || lead.assignedExecutiveId !== userId) {
+    const allowed = await this.deps.campaignLeads.existsByContactIdAndAssignee(
+      conversation.contactId,
+      userId
+    )
+    if (!allowed) {
       throw new HttpError('Conversation not found', 404, 'CONVERSATION_NOT_FOUND')
     }
   }

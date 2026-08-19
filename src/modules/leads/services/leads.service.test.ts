@@ -46,6 +46,7 @@ function mkLeadsRepo(over: Partial<CampaignLeadRepositoryPort> = {}): CampaignLe
     save: vi.fn(async (l) => l),
     listAll: vi.fn(async () => []),
     listLeads: vi.fn(async () => ({ items: [leadItem()], total: 1 })),
+    existsByContactIdAndAssignee: vi.fn(async () => false),
     ...over,
   }
 }

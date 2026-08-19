@@ -99,6 +99,10 @@ export interface CampaignLeadRepositoryPort {
   save(lead: CampaignLeadData): Promise<CampaignLeadData>
   listAll(): Promise<LeadListItem[]>
   listLeads(params: ListLeadsRepoParams): Promise<LeadsRepoPage>
+  existsByContactIdAndAssignee(
+    contactId: string,
+    assigneeUserId: string
+  ): Promise<boolean>
 }
 
 export type LeadListItem = {

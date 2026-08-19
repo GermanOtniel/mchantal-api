@@ -178,4 +178,15 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
 
     return { items, total }
   }
+
+  async existsByContactIdAndAssignee(
+    contactId: string,
+    assigneeUserId: string
+  ): Promise<boolean> {
+    const found = await this.repo.findOne({
+      where: { contactId, assignedExecutiveId: assigneeUserId },
+      select: ['id'],
+    })
+    return Boolean(found)
+  }
 }
