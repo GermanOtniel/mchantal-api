@@ -75,7 +75,13 @@ export const LeadDetailResponseSchema = Type.Object({
 export const LeadEventSchema = Type.Object({
   id: Type.String(),
   leadId: Type.String(),
-  type: Type.String(),
+  type: Type.Union([
+    Type.Literal('status_change'),
+    Type.Literal('reassignment'),
+    Type.Literal('needs_reply_cleared'),
+    Type.Literal('enrolled'),
+    Type.Literal('message_milestone'),
+  ]),
   fromValue: Type.Union([Type.String(), Type.Null()]),
   toValue: Type.Union([Type.String(), Type.Null()]),
   reason: Type.Union([Type.String(), Type.Null()]),
@@ -86,12 +92,18 @@ export const LeadEventSchema = Type.Object({
 export const LeadTimelineResponseSchema = Type.Object({ items: Type.Array(LeadEventSchema) })
 
 export const ReassignBodySchema = Type.Object({
-  assigneeUserId: Type.Union([Type.String(), Type.Null()]),
+  assigneeUserId: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
   reason: Type.String({ minLength: 1 }),
 }, { additionalProperties: false })
 
 export const ChangeStatusBodySchema = Type.Object({
-  status: Type.String(),
+  status: Type.Union([
+    Type.Literal('new'),
+    Type.Literal('in_progress'),
+    Type.Literal('on_hold'),
+    Type.Literal('qualified'),
+    Type.Literal('disqualified'),
+  ]),
   reason: Type.String({ minLength: 1 }),
 }, { additionalProperties: false })
 
