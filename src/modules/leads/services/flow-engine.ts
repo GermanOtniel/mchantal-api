@@ -295,6 +295,7 @@ export class FlowEngine {
       sentAt: new Date(),
       metadata: data.metadata,
     })
+    await this.deps.conversations.touchLastMessage(ctx.conversationId, new Date(), 'outbound')
   }
 }
 

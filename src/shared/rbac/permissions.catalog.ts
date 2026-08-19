@@ -4,6 +4,11 @@ export const PERMISSIONS = {
   CAMPAIGNS_MANAGE: 'campaigns.manage',
   MATCHER_DICTIONARIES_MANAGE: 'matcher_dictionaries.manage',
   LEADS_READ: 'leads.read',
+  LEADS_READ_ALL: 'leads.read.all',
+  LEADS_FILTER_CAMPAIGN: 'leads.filter.campaign',
+  LEADS_FILTER_STATUS: 'leads.filter.status',
+  LEADS_FILTER_ASSIGNMENT: 'leads.filter.assignment',
+  LEADS_CLEAR_NEEDS_REPLY: 'leads.clear_needs_reply',
 } as const
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS]
@@ -41,6 +46,31 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     key: PERMISSIONS.LEADS_READ,
     module: 'leads',
     description: 'Ver leads del sistema',
+  },
+  {
+    key: PERMISSIONS.LEADS_READ_ALL,
+    module: 'leads',
+    description: 'Ver todos los leads (sin esto, sólo los asignados a mí)',
+  },
+  {
+    key: PERMISSIONS.LEADS_FILTER_CAMPAIGN,
+    module: 'leads',
+    description: 'Filtrar listado de leads por campaña',
+  },
+  {
+    key: PERMISSIONS.LEADS_FILTER_ASSIGNMENT,
+    module: 'leads',
+    description: 'Filtrar listado de leads por asignación (sin asignar o por ejecutivo)',
+  },
+  {
+    key: PERMISSIONS.LEADS_FILTER_STATUS,
+    module: 'leads',
+    description: 'Filtrar listado de leads por estatus de atención',
+  },
+  {
+    key: PERMISSIONS.LEADS_CLEAR_NEEDS_REPLY,
+    module: 'leads',
+    description: 'Marcar como atendido (descartar aviso de necesita respuesta)',
   },
 ]
 

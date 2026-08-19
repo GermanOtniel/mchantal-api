@@ -3,6 +3,10 @@ import type { NormalizedMessage } from '../../../shared/whatsapp/types/inbound.t
 import type { AssignmentDirective, AssignmentResult, LeadAssignmentContext } from '../../executives/types/assignment.types'
 import type { MatcherDictionaryData } from '../../matcher-dictionaries/types/dictionary.types'
 
+export const LEAD_STATUSES = ['new', 'in_progress', 'on_hold', 'qualified', 'disqualified'] as const
+export type LeadStatus = (typeof LEAD_STATUSES)[number]
+export const LEAD_STATUS_DEFAULT: LeadStatus = 'new'
+
 export type LeadCaptureData = {
   id: string
   folio: string
@@ -84,6 +88,7 @@ export interface CampaignLeadRepositoryPort {
   findById(id: string): Promise<CampaignLeadData | null>
   save(lead: CampaignLeadData): Promise<CampaignLeadData>
   listAll(): Promise<LeadListItem[]>
+  listLeads(params: ListLeadsRepoParams): Promise<LeadsRepoPage>
 }
 
 export type LeadListItem = {
@@ -99,7 +104,21 @@ export type LeadListItem = {
   assignedExecutiveName: string | null
   assignedAt: Date | null
   enrolledAt: Date
+  status: string
+  needsReply: boolean
 }
+
+export type ListLeadsRepoParams = {
+  scopeUserId: string | null
+  campaignId?: string
+  status?: string
+  assignment?: string
+  q?: string
+  page: number
+  pageSize: number
+}
+
+export type LeadsRepoPage = { items: LeadListItem[]; total: number }
 
 export interface LeadFlowStateRepositoryPort {
   findActiveByCampaignLeadId(campaignLeadId: string): Promise<LeadFlowStateData | null>
@@ -111,6 +130,7 @@ export interface LeadFlowStateRepositoryPort {
 export interface WhatsAppConversationRepositoryPort {
   findById(id: string): Promise<ConversationData | null>
   setLead(conversationId: string, leadId: string): Promise<void>
+  touchLastMessage(id: string, at: Date, direction: 'inbound' | 'outbound'): Promise<void>
 }
 
 export interface WhatsAppMessageRepositoryPort {
@@ -154,6 +174,7 @@ export interface WhatsAppConversationRepositoryWidePort
   extends WhatsAppConversationRepositoryPort {
   findOpenByContactId(contactId: string): Promise<ConversationData | null>
   createOpen(contactId: string): Promise<ConversationData>
+  clearNeedsReplyByLeadId(leadId: string): Promise<boolean>
 }
 
 export type MessageData = {
@@ -177,4 +198,42 @@ export interface WhatsAppMessageRepositoryWidePort
     status: string,
     metadata: Record<string, unknown>
   ): Promise<void>
+}
+
+export type ListLeadsQuery = {
+  page?: number
+  campaignId?: string
+  status?: string
+  assignment?: string
+  q?: string
+}
+
+export type LeadItemResponse = {
+  id: string
+  folio: string | null
+  campaignId: string
+  campaignName: string
+  contactWaId: string
+  contactName: string | null
+  answers: Record<string, string>
+  assignmentMode: 'executive' | 'pool' | 'manual' | null
+  assignedExecutiveId: string | null
+  assignedExecutiveName: string | null
+  assignedAt: string | null
+  enrolledAt: string
+  status: string
+  needsReply: boolean
+}
+
+export type LeadsPageResponse = {
+  items: LeadItemResponse[]
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
+}
+
+export type LeadFilterOptions = {
+  campaigns: { id: string; name: string }[]
+  executives: { id: string; fullName: string }[]
 }

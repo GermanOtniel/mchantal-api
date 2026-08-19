@@ -71,6 +71,8 @@ export class ConversationService {
       },
     })
 
+    await this.deps.conversations.touchLastMessage(conversation.id, message.timestamp, 'inbound')
+
     return {
       conversationId: conversation.id,
       contactId: contact.id,

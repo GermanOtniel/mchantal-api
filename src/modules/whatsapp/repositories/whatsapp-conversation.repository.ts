@@ -37,4 +37,16 @@ export class WhatsAppConversationRepository
     const c = await this.repo.save(this.repo.create({ contactId, status: 'open' }))
     return toData(c)
   }
+
+  async touchLastMessage(id: string, at: Date, direction: 'inbound' | 'outbound'): Promise<void> {
+    await this.repo.update({ id }, { lastMessageAt: at, lastMessageDirection: direction })
+  }
+
+  async clearNeedsReplyByLeadId(leadId: string): Promise<boolean> {
+    const res = await this.repo.update(
+      { leadId, status: 'open' },
+      { needsReplyClearedAt: new Date() }
+    )
+    return (res.affected ?? 0) > 0
+  }
 }

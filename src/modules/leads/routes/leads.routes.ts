@@ -6,12 +6,29 @@ import {
   requirePermission,
 } from '../../../shared/rbac/rbac.hooks'
 import { LeadsController } from '../controllers/leads.controller'
+import { LeadsService } from '../services/leads.service'
 import { CampaignLeadRepository } from '../repositories/campaign-lead.repository'
-import { LeadListResponseSchema } from '../schemas/leads.schemas'
+import { WhatsAppConversationRepository } from '../../whatsapp/repositories/whatsapp-conversation.repository'
+import { CampaignRepository } from '../../campaigns/repositories/campaign.repository'
+import { ExecutiveRepository } from '../../executives/repositories/executive.repository'
+import {
+  LeadsPageResponseSchema,
+  ListLeadsQuerySchema,
+  FilterOptionsResponseSchema,
+  LeadIdParamsSchema,
+} from '../schemas/leads.schemas'
+
+const PAGE_SIZE = 50
 
 export const leadsPlugin: FastifyPluginAsyncTypebox = async (app) => {
-  const repo = new CampaignLeadRepository()
-  const controller = new LeadsController(repo)
+  const service = new LeadsService(
+    new CampaignLeadRepository(),
+    new WhatsAppConversationRepository(),
+    new CampaignRepository(),
+    new ExecutiveRepository(),
+    PAGE_SIZE
+  )
+  const controller = new LeadsController(service)
 
   app.addHook('preHandler', jwtAuthHook)
   app.addHook('preHandler', loadPermissionsHook)
@@ -20,8 +37,26 @@ export const leadsPlugin: FastifyPluginAsyncTypebox = async (app) => {
     '/',
     {
       preHandler: requirePermission(PERMISSIONS.LEADS_READ),
-      schema: { response: { 200: LeadListResponseSchema } },
+      schema: { querystring: ListLeadsQuerySchema, response: { 200: LeadsPageResponseSchema } },
     },
     controller.list
+  )
+
+  app.get(
+    '/filter-options',
+    {
+      preHandler: requirePermission(PERMISSIONS.LEADS_READ),
+      schema: { response: { 200: FilterOptionsResponseSchema } },
+    },
+    controller.filterOptions
+  )
+
+  app.post(
+    '/:id/clear-needs-reply',
+    {
+      preHandler: requirePermission(PERMISSIONS.LEADS_CLEAR_NEEDS_REPLY),
+      schema: { params: LeadIdParamsSchema, response: { 204: { type: 'null' } } },
+    },
+    controller.clearNeedsReply
   )
 }

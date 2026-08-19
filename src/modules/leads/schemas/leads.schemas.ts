@@ -13,8 +13,29 @@ export const LeadItemSchema = Type.Object({
   assignedExecutiveName: Type.Union([Type.String(), Type.Null()]),
   assignedAt: Type.Union([Type.String(), Type.Null()]),
   enrolledAt: Type.String(),
+  status: Type.String(),
+  needsReply: Type.Boolean(),
 })
 
-export const LeadListResponseSchema = Type.Object({
-  leads: Type.Array(LeadItemSchema),
+export const LeadsPageResponseSchema = Type.Object({
+  items: Type.Array(LeadItemSchema),
+  page: Type.Integer(),
+  pageSize: Type.Integer(),
+  total: Type.Integer(),
+  totalPages: Type.Integer(),
 })
+
+export const ListLeadsQuerySchema = Type.Object({
+  page: Type.Optional(Type.Integer({ minimum: 1 })),
+  campaignId: Type.Optional(Type.String()),
+  status: Type.Optional(Type.String()),
+  assignment: Type.Optional(Type.String()),
+  q: Type.Optional(Type.String()),
+})
+
+export const FilterOptionsResponseSchema = Type.Object({
+  campaigns: Type.Array(Type.Object({ id: Type.String(), name: Type.String() })),
+  executives: Type.Array(Type.Object({ id: Type.String(), fullName: Type.String() })),
+})
+
+export const LeadIdParamsSchema = Type.Object({ id: Type.String() })

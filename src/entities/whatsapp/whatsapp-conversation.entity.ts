@@ -36,6 +36,9 @@ export class WhatsAppConversation {
   @Column({ type: 'varchar', length: 20, nullable: true, name: 'last_message_direction' })
   lastMessageDirection!: MessageDirection | null
 
+  @Column({ type: 'timestamptz', nullable: true, name: 'needs_reply_cleared_at' })
+  needsReplyClearedAt!: Date | null
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date
 
