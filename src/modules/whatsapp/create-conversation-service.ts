@@ -48,3 +48,11 @@ export function getConversationService(): ConversationService {
   }
   return instance
 }
+
+/**
+ * Resetea el singleton de ConversationService. Útil para tests de
+ * integración/SSE que necesitan un RealtimeBus fresco entre archivos.
+ */
+export function resetConversationService(): void {
+  instance = null
+}

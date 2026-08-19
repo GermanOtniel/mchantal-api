@@ -9,6 +9,7 @@ export const PERMISSIONS = {
   LEADS_FILTER_STATUS: 'leads.filter.status',
   LEADS_FILTER_ASSIGNMENT: 'leads.filter.assignment',
   LEADS_CLEAR_NEEDS_REPLY: 'leads.clear_needs_reply',
+  LEADS_ATTEND: 'leads.attend',
 } as const
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS]
@@ -71,6 +72,11 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     key: PERMISSIONS.LEADS_CLEAR_NEEDS_REPLY,
     module: 'leads',
     description: 'Marcar como atendido (descartar aviso de necesita respuesta)',
+  },
+  {
+    key: PERMISSIONS.LEADS_ATTEND,
+    module: 'leads',
+    description: 'Atender un lead (vista de atención, chat, acciones)',
   },
 ]
 

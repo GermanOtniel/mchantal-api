@@ -50,23 +50,19 @@ export class WhatsAppController {
   ) => {
     const { conversationId, toWaId, text } = request.body
 
-    if (!conversationId && !toWaId) {
+    if (!conversationId) {
       return reply.status(400).send({
-        error: 'Provide conversationId or toWaId',
+        error: 'conversationId is required',
         code: 'INVALID_RECIPIENT',
       })
     }
 
     try {
-      // Scope check only when conversationId is present (Atender always sends
-      // conversationId; toWaId-only is not used by the UI).
-      if (conversationId) {
-        await this.conversations.assertConversationInScope(
-          conversationId,
-          request.permissions ?? new Set<string>(),
-          request.user!.sub
-        )
-      }
+      await this.conversations.assertConversationInScope(
+        conversationId,
+        request.permissions ?? new Set<string>(),
+        request.user!.sub
+      )
       const result = await this.conversations.sendTextMessage(this.provider, {
         conversationId,
         toWaId,

@@ -8,6 +8,7 @@ import { campaignsPlugin } from './modules/campaigns/routes/campaigns.routes'
 import { matcherDictionariesPlugin } from './modules/matcher-dictionaries/routes/matcher-dictionaries.routes'
 import { executivesPlugin } from './modules/executives/routes/executives.routes'
 import { webhookPlugin } from './modules/whatsapp/routes/webhook.routes'
+import { whatsappPlugin } from './modules/whatsapp/routes/whatsapp.routes'
 import { publicLeadCapturePlugin } from './modules/leads/routes/lead-captures.routes'
 import { leadsPlugin } from './modules/leads/routes/leads.routes'
 import { rbacPlugin } from './modules/rbac/routes/rbac.routes'
@@ -39,6 +40,7 @@ export async function buildApp() {
   await app.register(rbacPlugin, { prefix: '/v1/rbac' })
   await app.register(publicLeadCapturePlugin, { prefix: '/v1/public' })
   await app.register(webhookPlugin)
+  await app.register(whatsappPlugin, { prefix: '/v1/whatsapp' })
 
   app.get('/health', async () => {
     return { status: 'ok', timestamp: new Date().toISOString() }

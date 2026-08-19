@@ -11,6 +11,14 @@ describe('permissions catalog — leads listing (Scope A)', () => {
     expect(PERMISSIONS.LEADS_CLEAR_NEEDS_REPLY).toBe('leads.clear_needs_reply')
   })
 
+  it('LEADS_ATTEND existe y está en PERMISSION_CATALOG con módulo leads', () => {
+    expect(PERMISSIONS.LEADS_ATTEND).toBe('leads.attend')
+    const def = PERMISSION_CATALOG.find((p) => p.key === PERMISSIONS.LEADS_ATTEND)
+    expect(def).toBeDefined()
+    expect(def!.module).toBe('leads')
+    expect(def!.description.length).toBeGreaterThan(0)
+  })
+
   it('PERMISSION_CATALOG incluye las 5 keys nuevas con módulo leads', () => {
     const keys = PERMISSION_CATALOG.map((p) => p.key)
     expect(keys).toContain('leads.read.all')
