@@ -329,13 +329,15 @@ const textInputNode = {
   body: '¿Cuál es tu ciudad?',
   storeAs: 'city',
   matcher: { dictionaryId: 'dict-city' },
-  transitions: {},
+  transitions: { 'cat-cdmx': 'n3', 'cat-gdl': 'n3' },
+  defaultTransition: 'n3',
 }
 const freeTextNode = {
   id: 'n2',
   type: 'free_text' as const,
   body: 'Comentarios',
   storeAs: 'comments',
+  nextNodeId: 'n3',
 }
 const buttonsNode = {
   id: 'n3',
@@ -346,6 +348,66 @@ const buttonsNode = {
     { id: 'promo', title: 'Vi una promoción' },
   ],
   transitions: {},
+}
+// Nodo de entrada (interactive_buttons) — flujos de los tests de orden/branch.
+const welcomeNode = {
+  id: 'welcome',
+  type: 'interactive_buttons' as const,
+  body: 'Hola {{folio}}, ¿qué te trae aquí?',
+  buttons: [
+    { id: 'comprar', title: 'Quiero comprar' },
+    { id: 'promo', title: 'Vi una promoción' },
+  ],
+  transitions: { comprar: 'ask_producto', promo: 'closing_promo' },
+}
+// Welcome simple → text_input (n1) para tests de un solo text_input.
+const welcomeToTextInputNode = {
+  id: 'welcome',
+  type: 'interactive_buttons' as const,
+  body: 'Hola',
+  buttons: [{ id: 'start', title: 'Empezar' }],
+  transitions: { start: 'n1' },
+}
+// Welcome simple → free_text (n2) para tests de un solo free_text.
+const welcomeToFreeTextNode = {
+  id: 'welcome',
+  type: 'interactive_buttons' as const,
+  body: 'Hola',
+  buttons: [{ id: 'start', title: 'Empezar' }],
+  transitions: { start: 'n2' },
+}
+const askProductoNode = {
+  id: 'ask_producto',
+  type: 'text_input' as const,
+  body: '¿Qué producto te interesa?',
+  storeAs: 'producto',
+  matcher: { dictionaryId: 'dict-prod' },
+  transitions: {},
+  defaultTransition: 'presupuesto',
+}
+const presupuestoNode = {
+  id: 'presupuesto',
+  type: 'free_text' as const,
+  body: '¿Cuál es tu presupuesto?',
+  storeAs: 'presupuesto',
+}
+const closingPromoNode = {
+  id: 'closing_promo',
+  type: 'text_message' as const,
+  body: '¡Te contactaremos con la promoción!',
+}
+const bridgeNode = {
+  id: 'bridge',
+  type: 'text_message' as const,
+  body: 'Un momento...',
+  nextNodeId: 'ask_producto',
+}
+const welcomeToBridgeNode = {
+  id: 'welcome',
+  type: 'interactive_buttons' as const,
+  body: 'Hola',
+  buttons: [{ id: 'comprar', title: 'Quiero comprar' }],
+  transitions: { comprar: 'bridge' },
 }
 
 function convData(over: Partial<ConversationData> = {}): ConversationData {
@@ -373,6 +435,14 @@ function dictData(over: Partial<MatcherDictionaryData> = {}): MatcherDictionaryD
   }
 }
 
+function dictProdData(over: Partial<MatcherDictionaryData> = {}): MatcherDictionaryData {
+  return {
+    id: 'dict-prod', slug: 'producto', name: 'Producto',
+    categories: [{ id: 'prod-a', label: 'Producto A', aliases: ['a'] }],
+    isSystem: false, ...over,
+  }
+}
+
 describe('LeadsService.getLead', () => {
   it('sin leads.attend → 403', async () => {
     const svc = mkSvc()
@@ -391,36 +461,42 @@ describe('LeadsService.getLead', () => {
     await expect(svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND), userId: 'u1', leadId: 'l1' })).rejects.toMatchObject({ statusCode: 404, code: 'LEAD_NOT_FOUND' })
   })
 
-  it('Q&A con text_input → resuelve label del diccionario (cacheado)', async () => {
+  it('Q&A con text_input → resuelve label del diccionario (cacheado), en orden de conversación', async () => {
     const leadsRepo = mkLeadsRepo({
       findById: vi.fn(async () => leadData({
-        campaign: { id: 'c1', name: 'Campaña 1', flowDefinition: { nodes: { n1: textInputNode } } },
+        campaign: { id: 'c1', name: 'Campaña 1', flowDefinition: { nodes: { welcome: welcomeToTextInputNode, n1: textInputNode } } },
       })),
     })
     const flowStates = mkFlowStateRepo({
-      findByCampaignLeadId: vi.fn(async () => flowStateData({ context: { answers: { city: 'cat-cdmx' } } })),
+      findByCampaignLeadId: vi.fn(async () => flowStateData({ context: { answers: { welcome: 'start', city: 'cat-cdmx' } } })),
     })
     const dictionaries = mkDictRepo({ findById: vi.fn(async () => dictData()) })
     const svc = mkSvc({ leadsRepo, flowStates, dictionaries })
     const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
-    expect(res.answers).toEqual([{ storeAs: 'city', prompt: '¿Cuál es tu ciudad?', value: 'Ciudad de México' }])
+    expect(res.answers).toEqual([
+      { storeAs: 'welcome', prompt: 'Hola', value: 'Empezar' },
+      { storeAs: 'city', prompt: '¿Cuál es tu ciudad?', value: 'Ciudad de México' },
+    ])
     expect(dictionaries.findById).toHaveBeenCalledTimes(1)
     expect(dictionaries.findById).toHaveBeenCalledWith('dict-city')
   })
 
-  it('Q&A con free_text → value = texto crudo (no llama al diccionario)', async () => {
+  it('Q&A con free_text → value = texto crudo (no llama al diccionario), en orden de conversación', async () => {
     const leadsRepo = mkLeadsRepo({
       findById: vi.fn(async () => leadData({
-        campaign: { id: 'c1', name: 'Campaña 1', flowDefinition: { nodes: { n2: freeTextNode } } },
+        campaign: { id: 'c1', name: 'Campaña 1', flowDefinition: { nodes: { welcome: welcomeToFreeTextNode, n2: freeTextNode } } },
       })),
     })
     const flowStates = mkFlowStateRepo({
-      findByCampaignLeadId: vi.fn(async () => flowStateData({ context: { answers: { comments: 'Hola, me interesa' } } })),
+      findByCampaignLeadId: vi.fn(async () => flowStateData({ context: { answers: { welcome: 'start', comments: 'Hola, me interesa' } } })),
     })
     const dictionaries = mkDictRepo({ findById: vi.fn(async () => null) })
     const svc = mkSvc({ leadsRepo, flowStates, dictionaries })
     const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
-    expect(res.answers).toEqual([{ storeAs: 'comments', prompt: 'Comentarios', value: 'Hola, me interesa' }])
+    expect(res.answers).toEqual([
+      { storeAs: 'welcome', prompt: 'Hola', value: 'Empezar' },
+      { storeAs: 'comments', prompt: 'Comentarios', value: 'Hola, me interesa' },
+    ])
     expect(dictionaries.findById).not.toHaveBeenCalled()
   })
 
@@ -468,19 +544,20 @@ describe('LeadsService.getLead', () => {
     expect(res.answers).toEqual([])
   })
 
-  it('Q&A mixto: interactive_buttons + text_input ambos presentes', async () => {
+  it('Q&A mixto: welcome → text_input → interactive_buttons en orden de conversación', async () => {
     const leadsRepo = mkLeadsRepo({
       findById: vi.fn(async () => leadData({
-        campaign: { id: 'c1', name: 'Campaña 1', flowDefinition: { nodes: { n1: textInputNode, n3: buttonsNode } } },
+        campaign: { id: 'c1', name: 'Campaña 1', flowDefinition: { nodes: { welcome: welcomeToTextInputNode, n1: textInputNode, n3: buttonsNode } } },
       })),
     })
     const flowStates = mkFlowStateRepo({
-      findByCampaignLeadId: vi.fn(async () => flowStateData({ context: { answers: { city: 'cat-cdmx', n3: 'promo' } } })),
+      findByCampaignLeadId: vi.fn(async () => flowStateData({ context: { answers: { welcome: 'start', city: 'cat-cdmx', n3: 'promo' } } })),
     })
     const dictionaries = mkDictRepo({ findById: vi.fn(async () => dictData()) })
     const svc = mkSvc({ leadsRepo, flowStates, dictionaries })
     const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
     expect(res.answers).toEqual([
+      { storeAs: 'welcome', prompt: 'Hola', value: 'Empezar' },
       { storeAs: 'city', prompt: '¿Cuál es tu ciudad?', value: 'Ciudad de México' },
       { storeAs: 'n3', prompt: '¿Cómo te enteraste?', value: 'Vi una promoción' },
     ])
@@ -491,6 +568,73 @@ describe('LeadsService.getLead', () => {
     const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
     expect(res.answers).toEqual([])
     expect(res.flowState).toBeNull()
+  })
+
+  it('Q&A en orden de conversación aunque el flujo liste el nodo de entrada al final', async () => {
+    // El objeto `nodes` lista `welcome` en ÚLTIMO lugar; el orden de definición no es el de conversación.
+    const leadsRepo = mkLeadsRepo({
+      findById: vi.fn(async () => leadData({
+        campaign: {
+          id: 'c1', name: 'Campaña 1',
+          flowDefinition: { nodes: { ask_producto: askProductoNode, presupuesto: presupuestoNode, welcome: welcomeNode } },
+        },
+      })),
+    })
+    const flowStates = mkFlowStateRepo({
+      findByCampaignLeadId: vi.fn(async () => flowStateData({ context: { answers: { welcome: 'comprar', producto: 'prod-a', presupuesto: '$1000' } } })),
+    })
+    const dictionaries = mkDictRepo({ findById: vi.fn(async () => dictProdData()) })
+    const svc = mkSvc({ leadsRepo, flowStates, dictionaries })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.answers.map((a) => a.prompt)).toEqual([
+      'Hola {{folio}}, ¿qué te trae aquí?',
+      '¿Qué producto te interesa?',
+      '¿Cuál es tu presupuesto?',
+    ])
+    expect(res.answers.map((a) => a.storeAs)).toEqual(['welcome', 'producto', 'presupuesto'])
+    expect(dictionaries.findById).toHaveBeenCalledWith('dict-prod')
+  })
+
+  it('Q&A excluye la rama no tomada (sólo recorre la respuesta elegida)', async () => {
+    const leadsRepo = mkLeadsRepo({
+      findById: vi.fn(async () => leadData({
+        campaign: {
+          id: 'c1', name: 'Campaña 1',
+          flowDefinition: { nodes: { welcome: welcomeNode, ask_producto: askProductoNode, presupuesto: presupuestoNode, closing_promo: closingPromoNode } },
+        },
+      })),
+    })
+    // El usuario eligió 'comprar' (→ ask_producto); la rama 'promo' (→ closing_promo) no se tomó.
+    const flowStates = mkFlowStateRepo({
+      findByCampaignLeadId: vi.fn(async () => flowStateData({ context: { answers: { welcome: 'comprar', producto: 'prod-a' } } })),
+    })
+    const dictionaries = mkDictRepo({ findById: vi.fn(async () => dictProdData()) })
+    const svc = mkSvc({ leadsRepo, flowStates, dictionaries })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.answers.map((a) => a.storeAs)).toEqual(['welcome', 'producto'])
+    expect(res.answers.some((a) => a.prompt.includes('promoción'))).toBe(false)
+  })
+
+  it('Q&A salta nodos text_message (sin respuesta) y continúa al siguiente nodo con respuesta', async () => {
+    // welcome → bridge (text_message, sin respuesta) → ask_producto (text_input con respuesta).
+    const leadsRepo = mkLeadsRepo({
+      findById: vi.fn(async () => leadData({
+        campaign: {
+          id: 'c1', name: 'Campaña 1',
+          flowDefinition: { nodes: { welcome: welcomeToBridgeNode, bridge: bridgeNode, ask_producto: askProductoNode } },
+        },
+      })),
+    })
+    const flowStates = mkFlowStateRepo({
+      findByCampaignLeadId: vi.fn(async () => flowStateData({ context: { answers: { welcome: 'comprar', producto: 'prod-a' } } })),
+    })
+    const dictionaries = mkDictRepo({ findById: vi.fn(async () => dictProdData()) })
+    const svc = mkSvc({ leadsRepo, flowStates, dictionaries })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.answers.map((a) => a.storeAs)).toEqual(['welcome', 'producto'])
+    // El text_message (bridge) no genera item de Q&A pero el recorrido continuó hasta ask_producto.
+    expect(res.answers.some((a) => a.prompt === 'Un momento...')).toBe(false)
+    expect(res.answers.some((a) => a.prompt === '¿Qué producto te interesa?')).toBe(true)
   })
 
   it('needsReply true: inbound con lastMessageAt > needsReplyClearedAt', async () => {

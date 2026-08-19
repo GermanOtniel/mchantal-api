@@ -17,12 +17,25 @@ import type {
   WhatsAppContactRepositoryPort,
 } from '../types/leads.types'
 import type { MatcherDictionaryData } from '../../matcher-dictionaries/types/dictionary.types'
+import type { FlowDefinition } from '../../campaigns/types/flow.types'
 import type { CampaignRepositoryPort } from '../../campaigns/types/campaign.types'
 import type {
   ExecutiveRepositoryPort,
   AvailableExecutive,
 } from '../../executives/types/executives.types'
 import type { LeadFlowStateRepositoryPort } from '../types/leads.types'
+
+// Replica local de findFirstInteractiveNode del FlowEngine (sin importar flow-engine para evitar acoplamiento).
+function findFirstInteractiveNode(flow: FlowDefinition): string | null {
+  const nodes = flow.nodes ?? {}
+  if (flow.entryNodeId && nodes[flow.entryNodeId]?.type === 'interactive_buttons') {
+    return flow.entryNodeId
+  }
+  const welcome = nodes['welcome']
+  if (welcome && welcome.type === 'interactive_buttons') return 'welcome'
+  const node = Object.values(nodes).find((n) => n.type === 'interactive_buttons')
+  return node?.id ?? null
+}
 
 function toResponse(l: LeadListItem): LeadItemResponse {
   return {
@@ -177,32 +190,55 @@ export class LeadsService {
     const conversation = await this.conversations.findOpenByLeadId(leadId)
     const flowState = await this.flowStates.findByCampaignLeadId(leadId)
 
-    // Q&A
+    // Q&A en orden de conversación: recorre el flujo desde el nodo inicial siguiendo las respuestas.
     const answers = (flowState?.context.answers as Record<string, string> | undefined) ?? {}
     const flow = lead.campaign.flowDefinition
     const dictCache = new Map<string, MatcherDictionaryData | null>()
     const qa: LeadQAItem[] = []
-    for (const node of Object.values(flow?.nodes ?? {})) {
+
+    const startId = findFirstInteractiveNode(flow)
+    let nodeId: string | undefined = startId ?? undefined
+    const visited = new Set<string>()
+    let guard = 0
+    while (nodeId && !visited.has(nodeId) && guard++ < 200) {
+      visited.add(nodeId)
+      const node = flow.nodes?.[nodeId]
+      if (!node) break
+
       if (node.type === 'interactive_buttons') {
         const replyId = answers[node.id]
-        if (replyId === undefined) continue
-        const button = node.buttons.find((b) => b.id === replyId)
-        qa.push({ storeAs: node.id, prompt: node.body, value: button?.title ?? replyId })
+        if (replyId === undefined) break
+        const btn = node.buttons.find((b) => b.id === replyId)
+        qa.push({ storeAs: node.id, prompt: node.body, value: btn?.title ?? replyId })
+        nodeId = node.transitions[replyId]
         continue
       }
-      if (node.type !== 'text_input' && node.type !== 'free_text') continue
-      const raw = answers[node.storeAs]
-      if (raw === undefined) continue
-      let value = raw
       if (node.type === 'text_input') {
+        const raw = answers[node.storeAs]
+        if (raw === undefined) break
         let dict = dictCache.get(node.matcher.dictionaryId)
         if (!dictCache.has(node.matcher.dictionaryId)) {
           dict = await this.dictionaries.findById(node.matcher.dictionaryId)
           dictCache.set(node.matcher.dictionaryId, dict)
         }
-        value = dict?.categories.find((c) => c.id === raw)?.label ?? raw
+        const value = dict?.categories.find((c) => c.id === raw)?.label ?? raw
+        qa.push({ storeAs: node.storeAs, prompt: node.body, value })
+        nodeId = node.transitions[raw] ?? node.defaultTransition
+        continue
       }
-      qa.push({ storeAs: node.storeAs, prompt: node.body, value })
+      if (node.type === 'free_text') {
+        const raw = answers[node.storeAs]
+        if (raw === undefined) break
+        qa.push({ storeAs: node.storeAs, prompt: node.body, value: raw })
+        nodeId = node.nextNodeId
+        continue
+      }
+      if (node.type === 'text_message') {
+        // sin respuesta; sólo avanza
+        nodeId = node.nextNodeId
+        continue
+      }
+      break
     }
 
     const needsReply =
