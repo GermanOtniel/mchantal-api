@@ -25,8 +25,8 @@ export class WhatsAppMessageRepository implements WhatsAppMessageRepositoryWideP
     return AppDataSource.getRepository(WhatsAppMessage)
   }
 
-  async create(data: MessageCreateData): Promise<WhatsAppMessage> {
-    return this.repo.save(
+  async create(data: MessageCreateData): Promise<MessageData> {
+    const saved = await this.repo.save(
       this.repo.create({
         conversationId: data.conversationId,
         direction: data.direction,
@@ -38,6 +38,7 @@ export class WhatsAppMessageRepository implements WhatsAppMessageRepositoryWideP
         metadata: data.metadata,
       })
     )
+    return toData(saved)
   }
 
   async findByProviderMessageId(providerMessageId: string): Promise<MessageData | null> {

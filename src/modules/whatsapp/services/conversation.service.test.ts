@@ -190,6 +190,63 @@ describe('ConversationService.sendTextMessage', () => {
     const svc = new ConversationService(deps)
     await expect(svc.sendTextMessage(makeProvider(), { text: 'x' })).rejects.toMatchObject({ statusCode: 400, code: 'INVALID_RECIPIENT' })
   })
+
+  it('solo toWaId (con conversación abierta existente): upsert contacto con waId sin dígitos, reutiliza conversación, refetch por findById, envía con contactWaId refetched, publica realtime', async () => {
+    const existingConv: ConversationData = { id: 'conv-by-contact', contactId: 'ct-toWaId', contactWaId: '5215512345678', status: 'open', leadId: null }
+    const refetchedConv: ConversationData = { id: 'conv-by-contact', contactId: 'ct-toWaId', contactWaId: '5215512345678', status: 'open', leadId: null }
+    const saved: MessageData = { id: 'm-out', conversationId: 'conv-by-contact', direction: 'outbound', providerMessageId: 'wa-out-1', type: 'text', bodyText: 'hola', status: 'pending', metadata: {}, sentAt: new Date('2026-01-01T00:00:00Z') }
+    const contacts = { upsert: vi.fn(async () => ({ id: 'ct-toWaId', waId: '5215512345678', profileName: null }) as ContactData) }
+    const conversations = {
+      findById: vi.fn(async () => refetchedConv),
+      setLead: vi.fn(async () => {}),
+      findOpenByContactId: vi.fn(async () => existingConv),
+      createOpen: vi.fn(async () => { throw new Error('should not createOpen') }),
+      touchLastMessage: vi.fn(async () => {}),
+      clearNeedsReplyByLeadId: vi.fn(async () => true),
+    } as unknown as WhatsAppConversationRepositoryWidePort
+    const deps = makeDeps({ contacts, conversations, messages: { create: vi.fn(async () => saved), findByProviderMessageId: vi.fn(async () => null), updateStatus: vi.fn(async () => {}), updateStatusAndMetadata: vi.fn(async () => {}), listByConversation: vi.fn(async () => []) } as unknown as WhatsAppMessageRepositoryWidePort })
+    const svc = new ConversationService(deps)
+    const provider = makeProvider('wa-out-1')
+    const res = await svc.sendTextMessage(provider, { toWaId: '+52 1 55 1234 5678', text: 'hola' })
+
+    expect(contacts.upsert).toHaveBeenCalledWith('5215512345678')
+    expect(conversations.findOpenByContactId).toHaveBeenCalledWith('ct-toWaId')
+    expect(conversations.createOpen).not.toHaveBeenCalled()
+    expect(conversations.findById).toHaveBeenCalledWith('conv-by-contact')
+    expect(provider.sendTextMessage).toHaveBeenCalledWith({ toWaId: '5215512345678', text: 'hola' })
+    expect(res).toEqual({ providerMessageId: 'wa-out-1', conversationId: 'conv-by-contact' })
+    expect(deps.messages.create).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'conv-by-contact', direction: 'outbound', providerMessageId: 'wa-out-1', type: 'text', bodyText: 'hola', status: 'pending' }))
+    expect(deps.conversations.touchLastMessage).toHaveBeenCalledWith('conv-by-contact', expect.any(Date), 'outbound')
+    const bus = deps.realtimeBus as unknown as { published: WhatsAppRealtimeEvent[] }
+    expect(bus.published).toContainEqual({ type: 'message.created', payload: { conversationId: 'conv-by-contact', message: expect.objectContaining({ id: 'm-out', direction: 'outbound' }) } })
+    expect(bus.published).toContainEqual({ type: 'conversation.updated', payload: { conversationId: 'conv-by-contact', lastMessageAt: expect.any(String), lastMessageDirection: 'outbound', needsReply: false } })
+  })
+
+  it('solo toWaId (sin conversación abierta): upsert contacto y llama createOpen, luego refetch', async () => {
+    const createdConv: ConversationData = { id: 'conv-new-toWaId', contactId: 'ct-toWaId', contactWaId: '', status: 'open', leadId: null }
+    const refetchedConv: ConversationData = { id: 'conv-new-toWaId', contactId: 'ct-toWaId', contactWaId: '5215512345678', status: 'open', leadId: null }
+    const saved: MessageData = { id: 'm-out', conversationId: 'conv-new-toWaId', direction: 'outbound', providerMessageId: 'wa-out-1', type: 'text', bodyText: 'hola', status: 'pending', metadata: {}, sentAt: new Date('2026-01-01T00:00:00Z') }
+    const contacts = { upsert: vi.fn(async () => ({ id: 'ct-toWaId', waId: '5215512345678', profileName: null }) as ContactData) }
+    const conversations = {
+      findById: vi.fn(async () => refetchedConv),
+      setLead: vi.fn(async () => {}),
+      findOpenByContactId: vi.fn(async () => null),
+      createOpen: vi.fn(async () => createdConv),
+      touchLastMessage: vi.fn(async () => {}),
+      clearNeedsReplyByLeadId: vi.fn(async () => true),
+    } as unknown as WhatsAppConversationRepositoryWidePort
+    const deps = makeDeps({ contacts, conversations, messages: { create: vi.fn(async () => saved), findByProviderMessageId: vi.fn(async () => null), updateStatus: vi.fn(async () => {}), updateStatusAndMetadata: vi.fn(async () => {}), listByConversation: vi.fn(async () => []) } as unknown as WhatsAppMessageRepositoryWidePort })
+    const svc = new ConversationService(deps)
+    const provider = makeProvider('wa-out-1')
+    const res = await svc.sendTextMessage(provider, { toWaId: '+52 1 55 1234 5678', text: 'hola' })
+
+    expect(contacts.upsert).toHaveBeenCalledWith('5215512345678')
+    expect(conversations.findOpenByContactId).toHaveBeenCalledWith('ct-toWaId')
+    expect(conversations.createOpen).toHaveBeenCalledWith('ct-toWaId')
+    expect(conversations.findById).toHaveBeenCalledWith('conv-new-toWaId')
+    expect(provider.sendTextMessage).toHaveBeenCalledWith({ toWaId: '5215512345678', text: 'hola' })
+    expect(res).toEqual({ providerMessageId: 'wa-out-1', conversationId: 'conv-new-toWaId' })
+  })
 })
 
 describe('ConversationService.listMessages', () => {

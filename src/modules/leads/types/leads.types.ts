@@ -135,7 +135,7 @@ export interface WhatsAppConversationRepositoryPort {
 }
 
 export interface WhatsAppMessageRepositoryPort {
-  create(data: MessageCreateData): Promise<unknown>
+  create(data: MessageCreateData): Promise<MessageData>
 }
 
 export interface MatcherDictionaryResolverPort {

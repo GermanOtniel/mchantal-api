@@ -7,16 +7,16 @@ import type {
 } from '../../../shared/whatsapp/types/inbound.types'
 import type { InboundFlowContext } from '../../leads/types/leads.types'
 import type {
+  MessageData,
   WhatsAppContactRepositoryPort,
   WhatsAppConversationRepositoryWidePort,
   WhatsAppMessageRepositoryWidePort,
 } from '../../leads/types/leads.types'
-import type { WhatsAppMessage } from '../../../entities/whatsapp/whatsapp-message.entity'
 import { HttpError } from '../../auth/http-error'
 import type { RealtimeBus } from '../realtime/realtime-bus'
 import type { MessageRealtimePayload } from '../realtime/types'
 
-function toMessagePayload(message: WhatsAppMessage): MessageRealtimePayload {
+function toMessagePayload(message: MessageData): MessageRealtimePayload {
   return {
     id: message.id,
     conversationId: message.conversationId,
@@ -112,7 +112,7 @@ export class ConversationService {
       type: 'message.created',
       payload: {
         conversationId: conversation.id,
-        message: toMessagePayload(savedMessage as unknown as WhatsAppMessage),
+        message: toMessagePayload(savedMessage),
       },
     })
     this.publishConversationUpdated(conversation.id, message.timestamp, 'inbound')
@@ -166,7 +166,11 @@ export class ConversationService {
       conversation =
         (await this.deps.conversations.findOpenByContactId(contact.id)) ??
         (await this.deps.conversations.createOpen(contact.id))
-      conversation = (await this.deps.conversations.findById(conversation.id))!
+      const refetched = await this.deps.conversations.findById(conversation.id)
+      if (!refetched) {
+        throw new HttpError('Conversation no longer available', 500, 'CONVERSATION_GONE')
+      }
+      conversation = refetched
     }
 
     const result = await provider.sendTextMessage({
@@ -192,7 +196,7 @@ export class ConversationService {
       type: 'message.created',
       payload: {
         conversationId: conversation.id,
-        message: toMessagePayload(savedMessage as unknown as WhatsAppMessage),
+        message: toMessagePayload(savedMessage),
       },
     })
     this.publishConversationUpdated(conversation.id, sentAt, 'outbound')

@@ -3,3 +3,6 @@ dist
 .env
 # artefacto del config loader de vitest
 vitest.config.js
+
+# pi agent tooling state
+.pi/
