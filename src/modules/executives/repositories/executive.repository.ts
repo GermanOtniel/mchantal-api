@@ -69,7 +69,8 @@ export class ExecutiveRepository implements ExecutiveRepositoryPort {
   async listAvailableForCampaign(_campaignId: string): Promise<AvailableExecutive[]> {
     const rows = await this.repo
       .createQueryBuilder('u')
-      .select(['u.id AS userId', 'u.full_name AS fullName'])
+      .select('u.id', 'userId')
+      .addSelect('u.full_name', 'fullName')
       .addSelect(
         `(SELECT COUNT(*) FROM campaign_leads cl WHERE cl.assigned_executive_id = u.id AND cl.status NOT IN ('qualified','disqualified'))`,
         'activeLeads',
