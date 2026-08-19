@@ -26,7 +26,7 @@ function makeDeps(over: Partial<{
   flowEngine: { handleInbound: (s: WhatsAppSender, c: unknown) => Promise<void> }
 }> = {}) {
   const contact: ContactData = { id: 'ct1', waId: '12345', profileName: 'Ana' }
-  const conv: ConversationData = { id: 'conv1', contactId: 'ct1', status: 'open', leadId: null }
+  const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '', status: 'open', leadId: null }
   return {
     contacts: { upsert: vi.fn(async () => contact) },
     conversations: {
@@ -74,7 +74,7 @@ describe('ConversationService.processInboundEvents — mensaje', () => {
   })
 
   it('si no hay conversación abierta, crea una nueva', async () => {
-    const deps = makeDeps({ conversations: { findById: vi.fn(async () => null), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => ({ id: 'conv-new', contactId: 'ct1', status: 'open', leadId: null })), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort })
+    const deps = makeDeps({ conversations: { findById: vi.fn(async () => null), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => ({ id: 'conv-new', contactId: 'ct1', contactWaId: '', status: 'open', leadId: null })), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort })
     const svc = new ConversationService(deps)
     await svc.processInboundEvents([{ kind: 'message', message: msg({}) }], {} as WhatsAppSender)
     expect(deps.conversations.createOpen).toHaveBeenCalledWith('ct1')

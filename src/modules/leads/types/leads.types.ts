@@ -45,6 +45,7 @@ export type LeadFlowStateData = {
 export type ConversationData = {
   id: string
   contactId: string
+  contactWaId: string
   status: 'open' | 'closed'
   leadId: string | null
 }
@@ -198,6 +199,11 @@ export interface WhatsAppMessageRepositoryWidePort
     status: string,
     metadata: Record<string, unknown>
   ): Promise<void>
+  listByConversation(
+    conversationId: string,
+    limit: number,
+    cursor?: string
+  ): Promise<MessageData[]>
 }
 
 export type ListLeadsQuery = {

@@ -168,7 +168,7 @@ describe('FlowEngine — transición por botón', () => {
       lastInteractionAt: new Date(), completedAt: null,
     }
     const deps = makeDeps({
-      conversations: { findById: vi.fn(async () => ({ id: 'conv1', contactId: 'ct1', status: 'open', leadId: 'lead1' }) as ConversationData), setLead: vi.fn(async () => {}), touchLastMessage: vi.fn(async () => {}) },
+      conversations: { findById: vi.fn(async () => ({ id: 'conv1', contactId: 'ct1', contactWaId: '', status: 'open', leadId: 'lead1' }) as ConversationData), setLead: vi.fn(async () => {}), touchLastMessage: vi.fn(async () => {}) },
       campaignLeads: {
         findByContactAndCampaign: vi.fn(async () => null),
         create: vi.fn(async () => lead),
@@ -211,7 +211,7 @@ describe('FlowEngine — cierre de rama', () => {
       lastInteractionAt: new Date(), completedAt: null,
     }
     const deps = makeDeps({
-      conversations: { findById: vi.fn(async () => ({ id: 'conv1', contactId: 'ct1', status: 'open', leadId: 'lead1' }) as ConversationData), setLead: vi.fn(async () => {}), touchLastMessage: vi.fn(async () => {}) },
+      conversations: { findById: vi.fn(async () => ({ id: 'conv1', contactId: 'ct1', contactWaId: '', status: 'open', leadId: 'lead1' }) as ConversationData), setLead: vi.fn(async () => {}), touchLastMessage: vi.fn(async () => {}) },
       campaignLeads: {
         findByContactAndCampaign: vi.fn(async () => null),
         create: vi.fn(async () => lead),
@@ -252,7 +252,7 @@ describe('FlowEngine — cierre de rama', () => {
       context: { folio: FOLIO, answers: { welcome: 'comprar' } }, status: 'active',
       lastInteractionAt: new Date(), completedAt: null,
     }
-    const conversations = { findById: vi.fn(async () => ({ id: 'conv1', contactId: 'ct1', status: 'open', leadId: 'lead1' }) as ConversationData), setLead: vi.fn(async () => {}), touchLastMessage: vi.fn(async () => {}) }
+    const conversations = { findById: vi.fn(async () => ({ id: 'conv1', contactId: 'ct1', contactWaId: '', status: 'open', leadId: 'lead1' }) as ConversationData), setLead: vi.fn(async () => {}), touchLastMessage: vi.fn(async () => {}) }
     const deps = makeDeps({
       conversations,
       campaignLeads: {
@@ -291,7 +291,7 @@ describe('FlowEngine — reprompt (texto libre en nodo interactive)', () => {
       lastInteractionAt: new Date(), completedAt: null,
     }
     const deps = makeDeps({
-      conversations: { findById: vi.fn(async () => ({ id: 'conv1', contactId: 'ct1', status: 'open', leadId: 'lead1' }) as ConversationData), setLead: vi.fn(async () => {}), touchLastMessage: vi.fn(async () => {}) },
+      conversations: { findById: vi.fn(async () => ({ id: 'conv1', contactId: 'ct1', contactWaId: '', status: 'open', leadId: 'lead1' }) as ConversationData), setLead: vi.fn(async () => {}), touchLastMessage: vi.fn(async () => {}) },
       campaignLeads: {
         findByContactAndCampaign: vi.fn(async () => null),
         create: vi.fn(async () => lead),
@@ -321,7 +321,7 @@ describe('FlowEngine — reprompt (texto libre en nodo interactive)', () => {
 describe('FlowEngine — ignorado', () => {
   it('texto sin folio en conversación sin lead: no envía ni crea nada', async () => {
     const deps = makeDeps({
-      conversations: { findById: vi.fn(async () => ({ id: 'conv1', contactId: 'ct1', status: 'open', leadId: null }) as ConversationData), setLead: vi.fn(async () => {}), touchLastMessage: vi.fn(async () => {}) },
+      conversations: { findById: vi.fn(async () => ({ id: 'conv1', contactId: 'ct1', contactWaId: '', status: 'open', leadId: null }) as ConversationData), setLead: vi.fn(async () => {}), touchLastMessage: vi.fn(async () => {}) },
     })
     const { sender, sent } = makeSender()
     const engine = new FlowEngine(deps)
@@ -416,7 +416,7 @@ function leadAndState(flow: FlowDefinition, currentNodeId: string) {
 
 function wireLead(lead: CampaignLeadData, state: LeadFlowStateData) {
   return makeDeps({
-    conversations: { findById: vi.fn(async () => ({ id: 'conv1', contactId: 'ct1', status: 'open', leadId: 'lead1' }) as ConversationData), setLead: vi.fn(async () => {}), touchLastMessage: vi.fn(async () => {}) },
+    conversations: { findById: vi.fn(async () => ({ id: 'conv1', contactId: 'ct1', contactWaId: '', status: 'open', leadId: 'lead1' }) as ConversationData), setLead: vi.fn(async () => {}), touchLastMessage: vi.fn(async () => {}) },
     campaignLeads: {
       findByContactAndCampaign: vi.fn(async () => null),
       create: vi.fn(async () => lead),

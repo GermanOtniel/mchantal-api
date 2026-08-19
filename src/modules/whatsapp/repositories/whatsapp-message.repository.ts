@@ -60,4 +60,20 @@ export class WhatsAppMessageRepository implements WhatsAppMessageRepositoryWideP
     entity.metadata = metadata
     await this.repo.save(entity)
   }
+
+  async listByConversation(
+    conversationId: string,
+    limit: number,
+    cursor?: string
+  ): Promise<MessageData[]> {
+    const qb = this.repo
+      .createQueryBuilder('m')
+      .where('m.conversationId = :conversationId', { conversationId })
+      .orderBy('m.sentAt', 'DESC')
+      .addOrderBy('m.id', 'DESC')
+      .take(limit)
+    if (cursor) qb.andWhere('m.id < :cursor', { cursor })
+    const rows = await qb.getMany()
+    return rows.map(toData)
+  }
 }

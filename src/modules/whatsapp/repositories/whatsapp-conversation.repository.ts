@@ -6,7 +6,7 @@ import type {
 } from '../../leads/types/leads.types'
 
 function toData(c: WhatsAppConversation): ConversationData {
-  return { id: c.id, contactId: c.contactId, status: c.status, leadId: c.leadId }
+  return { id: c.id, contactId: c.contactId, contactWaId: '', status: c.status, leadId: c.leadId }
 }
 
 export class WhatsAppConversationRepository
@@ -17,8 +17,18 @@ export class WhatsAppConversationRepository
   }
 
   async findById(id: string): Promise<ConversationData | null> {
-    const c = await this.repo.findOne({ where: { id } })
-    return c ? toData(c) : null
+    const c = await this.repo.findOne({
+      where: { id },
+      relations: ['contact'],
+    })
+    if (!c) return null
+    return {
+      id: c.id,
+      contactId: c.contactId,
+      contactWaId: c.contact?.waId ?? '',
+      status: c.status,
+      leadId: c.leadId,
+    }
   }
 
   async setLead(conversationId: string, leadId: string): Promise<void> {
