@@ -7,6 +7,7 @@ import { FlowEngine } from '../leads/services/flow-engine'
 import { CampaignLeadRepository } from '../leads/repositories/campaign-lead.repository'
 import { LeadCaptureRepository } from '../leads/repositories/lead-capture.repository'
 import { LeadFlowStateRepository } from '../leads/repositories/lead-flow-state.repository'
+import { LeadEventsRepository } from '../leads/repositories/lead-event.repository'
 import { MatcherDictionaryRepository } from '../matcher-dictionaries/repositories/matcher-dictionary.repository'
 import { AssignmentService } from '../executives/services/assignment.service'
 import { ExecutiveRepository } from '../executives/repositories/executive.repository'
@@ -36,6 +37,8 @@ export function getConversationService(): ConversationService {
       messages,
       dictionaries,
       assignment,
+      leadEvents: new LeadEventsRepository(),
+      realtimeBus: getRealtimeBus(),
     })
     instance = new ConversationService({
       contacts,

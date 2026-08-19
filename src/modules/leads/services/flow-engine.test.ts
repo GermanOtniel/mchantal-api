@@ -589,3 +589,169 @@ describe('FlowEngine — free_text (captura libre sin match)', () => {
     expect(sender.sendTextMessage).not.toHaveBeenCalled()
   })
 })
+
+// ── Task 2.4: enrolled event + last_outbound milestone + realtime publish + paused no-op ──
+
+function makeRealtimeAndEvents() {
+  return {
+    leadEvents: { record: vi.fn(async (d: unknown) => d) },
+    realtimeBus: { publish: vi.fn() },
+  }
+}
+
+describe('FlowEngine — evento enrolled', () => {
+  it('lead NUEVO por folio: registra evento enrolled con leadId del nuevo lead', async () => {
+    const capture: LeadCaptureData = {
+      id: 'cap1', folio: FOLIO, campaignId: 'camp1',
+      campaign: { id: 'camp1', flowDefinition: demoFlow() },
+      status: 'pending', campaignLeadId: null,
+    }
+    const extra = makeRealtimeAndEvents()
+    const deps = makeDeps({
+      captures: { findPendingByFolio: vi.fn(async () => capture), markMatched: vi.fn(async () => {}) },
+      conversations: { findById: vi.fn(async () => ({ id: 'conv1', contactId: 'ct1', contactWaId: '', status: 'open', leadId: 'lead1' }) as ConversationData), setLead: vi.fn(async () => {}), touchLastMessage: vi.fn(async () => {}) },
+      messages: { create: vi.fn(async (d) => ({ id: 'msg-1', ...d, sentAt: d.sentAt })) },
+      ...extra,
+    })
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: `mi folio es ${FOLIO}` }) }))
+
+    expect(extra.leadEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'enrolled', leadId: 'lead1', actorUserId: null, fromValue: null, toValue: null, reason: null, milestoneKind: null })
+    )
+  })
+
+  it('lead EXISTENTE por folio: NO registra evento enrolled', async () => {
+    const flow = demoFlow()
+    const existingLead: CampaignLeadData = {
+      id: 'lead1', contactId: 'ct1', campaignId: 'camp1',
+      campaign: { id: 'camp1', flowDefinition: flow },
+      context: { folio: FOLIO, answers: {} },
+    }
+    const capture: LeadCaptureData = {
+      id: 'cap1', folio: FOLIO, campaignId: 'camp1',
+      campaign: { id: 'camp1', flowDefinition: flow },
+      status: 'pending', campaignLeadId: null,
+    }
+    const extra = makeRealtimeAndEvents()
+    const deps = makeDeps({
+      captures: { findPendingByFolio: vi.fn(async () => capture), markMatched: vi.fn(async () => {}) },
+      campaignLeads: {
+        findByContactAndCampaign: vi.fn(async () => existingLead),
+        create: vi.fn(async () => existingLead),
+        findById: vi.fn(async () => existingLead),
+        save: vi.fn(async (l) => l),
+      },
+      conversations: { findById: vi.fn(async () => ({ id: 'conv1', contactId: 'ct1', contactWaId: '', status: 'open', leadId: 'lead1' }) as ConversationData), setLead: vi.fn(async () => {}), touchLastMessage: vi.fn(async () => {}) },
+      messages: { create: vi.fn(async (d) => ({ id: 'msg-1', ...d, sentAt: d.sentAt })) },
+      ...extra,
+    })
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: `mi folio es ${FOLIO}` }) }))
+
+    expect(deps.campaignLeads.create).not.toHaveBeenCalled()
+    expect(extra.leadEvents.record).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'enrolled' })
+    )
+  })
+})
+
+describe('FlowEngine — milestone last_outbound + realtime publish', () => {
+  it('al enviar welcome outbound: registra milestone last_outbound y publica message.created + conversation.updated', async () => {
+    const flow = demoFlow()
+    const capture: LeadCaptureData = {
+      id: 'cap1', folio: FOLIO, campaignId: 'camp1',
+      campaign: { id: 'camp1', flowDefinition: flow },
+      status: 'pending', campaignLeadId: null,
+    }
+    const savedMessage = {
+      id: 'msg-1', conversationId: 'conv1', direction: 'outbound',
+      providerMessageId: 'out-1', type: 'interactive_buttons',
+      bodyText: 'Hola MC-ABCDE, ¿qué te trae aquí?', status: 'pending',
+      metadata: {}, sentAt: new Date('2026-01-01T00:00:00Z'),
+    }
+    const extra = makeRealtimeAndEvents()
+    const deps = makeDeps({
+      captures: { findPendingByFolio: vi.fn(async () => capture), markMatched: vi.fn(async () => {}) },
+      campaignLeads: {
+        findByContactAndCampaign: vi.fn(async () => null),
+        create: vi.fn(async (d) => ({
+          id: 'lead1', contactId: d.contactId, campaignId: d.campaignId,
+          campaign: capture.campaign, context: d.context,
+        })),
+        findById: vi.fn(async () => null),
+        save: vi.fn(async (l) => l),
+      },
+      conversations: { findById: vi.fn(async () => ({ id: 'conv1', contactId: 'ct1', contactWaId: '', status: 'open', leadId: 'lead1' }) as ConversationData), setLead: vi.fn(async () => {}), touchLastMessage: vi.fn(async () => {}) },
+      messages: { create: vi.fn(async () => savedMessage) },
+      ...extra,
+    })
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: `mi folio es ${FOLIO}` }) }))
+
+    // milestone last_outbound
+    expect(extra.leadEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'message_milestone', milestoneKind: 'last_outbound', leadId: 'lead1', actorUserId: null })
+    )
+    // realtime: message.created
+    expect(extra.realtimeBus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'message.created',
+        payload: expect.objectContaining({
+          conversationId: 'conv1',
+          message: expect.objectContaining({ id: 'msg-1', conversationId: 'conv1', direction: 'outbound' }),
+        }),
+      })
+    )
+    // realtime: conversation.updated con needsReply false
+    expect(extra.realtimeBus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'conversation.updated',
+        payload: expect.objectContaining({ conversationId: 'conv1', lastMessageDirection: 'outbound', needsReply: false }),
+      })
+    )
+  })
+})
+
+describe('FlowEngine — paused no-op', () => {
+  it('flowState paused (findActiveByCampaignLeadId → null): no envía, no milestone, no publish', async () => {
+    const flow = demoFlow()
+    const lead: CampaignLeadData = {
+      id: 'lead1', contactId: 'ct1', campaignId: 'camp1',
+      campaign: { id: 'camp1', flowDefinition: flow },
+      context: { folio: FOLIO, answers: {} },
+    }
+    const extra = makeRealtimeAndEvents()
+    const deps = makeDeps({
+      conversations: { findById: vi.fn(async () => ({ id: 'conv1', contactId: 'ct1', contactWaId: '', status: 'open', leadId: 'lead1' }) as ConversationData), setLead: vi.fn(async () => {}), touchLastMessage: vi.fn(async () => {}) },
+      campaignLeads: {
+        findByContactAndCampaign: vi.fn(async () => null),
+        create: vi.fn(async () => lead),
+        findById: vi.fn(async () => lead),
+        save: vi.fn(async (l) => l),
+      },
+      flowStates: {
+        findActiveByCampaignLeadId: vi.fn(async () => null),
+        findByCampaignLeadId: vi.fn(async () => null),
+        create: vi.fn(async () => null),
+        save: vi.fn(async (s) => s),
+      },
+      ...extra,
+    })
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'hola' }) }))
+
+    expect(sender.sendTextMessage).not.toHaveBeenCalled()
+    expect(sender.sendInteractiveButtons).not.toHaveBeenCalled()
+    expect(extra.leadEvents.record).not.toHaveBeenCalled()
+    expect(extra.realtimeBus.publish).not.toHaveBeenCalled()
+  })
+})

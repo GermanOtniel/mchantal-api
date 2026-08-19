@@ -5,6 +5,7 @@ import type { LeadEventType } from '../../../entities/leads/lead-event.entity'
 export type { LeadEventType }
 import type { AssignmentDirective, AssignmentResult, LeadAssignmentContext } from '../../executives/types/assignment.types'
 import type { MatcherDictionaryData } from '../../matcher-dictionaries/types/dictionary.types'
+import type { RealtimeBus } from '../../whatsapp/realtime/realtime-bus'
 
 export const LEAD_STATUSES = ['new', 'in_progress', 'on_hold', 'qualified', 'disqualified'] as const
 export type LeadStatus = (typeof LEAD_STATUSES)[number]
@@ -157,6 +158,8 @@ export type FlowEngineDeps = {
   messages: WhatsAppMessageRepositoryPort
   dictionaries: MatcherDictionaryResolverPort
   assignment: AssignmentResolverPort
+  leadEvents?: LeadEventsRepositoryPort
+  realtimeBus?: RealtimeBus
 }
 
 export type InboundFlowContext = {
