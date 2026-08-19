@@ -71,15 +71,14 @@ export class LeadsService {
     }
 
     const campaignId = permissions.has(PERMISSIONS.LEADS_FILTER_CAMPAIGN) ? query.campaignId : undefined
-    const executiveId =
-      permissions.has(PERMISSIONS.LEADS_FILTER_EXECUTIVE) && scopeAll ? query.executiveId : undefined
+    const assignment = permissions.has(PERMISSIONS.LEADS_FILTER_ASSIGNMENT) ? query.assignment : undefined
     const q = query.q
 
     const { items, total } = await this.campaignLeads.listLeads({
       scopeUserId,
       campaignId,
       status,
-      executiveId,
+      assignment,
       q,
       page,
       pageSize: this.pageSize,
@@ -102,7 +101,6 @@ export class LeadsService {
     if (!input.permissions.has(PERMISSIONS.LEADS_READ)) {
       throw new HttpError('Forbidden', 403, 'FORBIDDEN')
     }
-    const scopeAll = input.permissions.has(PERMISSIONS.LEADS_READ_ALL)
 
     let campaigns: { id: string; name: string }[] = []
     if (input.permissions.has(PERMISSIONS.LEADS_FILTER_CAMPAIGN)) {
@@ -111,7 +109,7 @@ export class LeadsService {
     }
 
     let executives: { id: string; fullName: string }[] = []
-    if (input.permissions.has(PERMISSIONS.LEADS_FILTER_EXECUTIVE) && scopeAll) {
+    if (input.permissions.has(PERMISSIONS.LEADS_FILTER_ASSIGNMENT)) {
       const active = await this.executives.findAllActive()
       executives = active.map((e) => ({ id: e.id, fullName: e.fullName }))
     }

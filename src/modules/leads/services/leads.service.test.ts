@@ -130,19 +130,19 @@ describe('LeadsService.listLeads — descarte de filtros sin permiso', () => {
     await expect(svc.listLeads({ permissions: perms(PERMISSIONS.LEADS_READ, PERMISSIONS.LEADS_READ_ALL, PERMISSIONS.LEADS_FILTER_STATUS), userId: 'u1', query: { status: 'bogus' } })).rejects.toMatchObject({ statusCode: 400 })
   })
 
-  it('descarta executiveId sin leads.filter.executive', async () => {
-    await svc.listLeads({ permissions: perms(PERMISSIONS.LEADS_READ, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', query: { executiveId: 'u2' } })
-    expect(leadsRepo.listLeads).toHaveBeenCalledWith(expect.objectContaining({ executiveId: undefined }))
+  it('descarta assignment sin leads.filter.assignment', async () => {
+    await svc.listLeads({ permissions: perms(PERMISSIONS.LEADS_READ, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', query: { assignment: 'unassigned' } })
+    expect(leadsRepo.listLeads).toHaveBeenCalledWith(expect.objectContaining({ assignment: undefined }))
   })
 
-  it('descarta executiveId sin leads.read.all (aunque tenga filter.executive)', async () => {
-    await svc.listLeads({ permissions: perms(PERMISSIONS.LEADS_READ, PERMISSIONS.LEADS_FILTER_EXECUTIVE), userId: 'u1', query: { executiveId: 'u2' } })
-    expect(leadsRepo.listLeads).toHaveBeenCalledWith(expect.objectContaining({ executiveId: undefined, scopeUserId: 'u1' }))
+  it('acepta assignment=unassigned con leads.filter.assignment', async () => {
+    await svc.listLeads({ permissions: perms(PERMISSIONS.LEADS_READ, PERMISSIONS.LEADS_READ_ALL, PERMISSIONS.LEADS_FILTER_ASSIGNMENT), userId: 'u1', query: { assignment: 'unassigned' } })
+    expect(leadsRepo.listLeads).toHaveBeenCalledWith(expect.objectContaining({ assignment: 'unassigned' }))
   })
 
-  it('acepta executiveId con filter.executive + read.all', async () => {
-    await svc.listLeads({ permissions: perms(PERMISSIONS.LEADS_READ, PERMISSIONS.LEADS_READ_ALL, PERMISSIONS.LEADS_FILTER_EXECUTIVE), userId: 'u1', query: { executiveId: 'u2' } })
-    expect(leadsRepo.listLeads).toHaveBeenCalledWith(expect.objectContaining({ executiveId: 'u2' }))
+  it('acepta assignment=user:u2 con leads.filter.assignment', async () => {
+    await svc.listLeads({ permissions: perms(PERMISSIONS.LEADS_READ, PERMISSIONS.LEADS_READ_ALL, PERMISSIONS.LEADS_FILTER_ASSIGNMENT), userId: 'u1', query: { assignment: 'user:u2' } })
+    expect(leadsRepo.listLeads).toHaveBeenCalledWith(expect.objectContaining({ assignment: 'user:u2' }))
   })
 
   it('q siempre se pasa (dentro del scope)', async () => {
@@ -194,17 +194,15 @@ describe('LeadsService.filterOptions', () => {
     expect(res.campaigns).toEqual([{ id: 'c1', name: 'Campaña 1' }])
   })
 
-  it('sin filter.executive o sin read.all → executives vacío', async () => {
+  it('sin leads.filter.assignment → executives vacío', async () => {
     const svc = new LeadsService(mkLeadsRepo(), mkConvRepo(), mkCampaignRepo(), mkExecRepo(), PAGE_SIZE)
-    const r1 = await svc.filterOptions({ permissions: perms(PERMISSIONS.LEADS_READ, PERMISSIONS.LEADS_FILTER_EXECUTIVE), userId: 'u1' })
-    expect(r1.executives).toEqual([])
-    const r2 = await svc.filterOptions({ permissions: perms(PERMISSIONS.LEADS_READ, PERMISSIONS.LEADS_READ_ALL), userId: 'u1' })
-    expect(r2.executives).toEqual([])
+    const res = await svc.filterOptions({ permissions: perms(PERMISSIONS.LEADS_READ, PERMISSIONS.LEADS_READ_ALL), userId: 'u1' })
+    expect(res.executives).toEqual([])
   })
 
-  it('con filter.executive + read.all → executives activos', async () => {
+  it('con leads.filter.assignment → executives activos', async () => {
     const svc = new LeadsService(mkLeadsRepo(), mkConvRepo(), mkCampaignRepo(), mkExecRepo(), PAGE_SIZE)
-    const res = await svc.filterOptions({ permissions: perms(PERMISSIONS.LEADS_READ, PERMISSIONS.LEADS_READ_ALL, PERMISSIONS.LEADS_FILTER_EXECUTIVE), userId: 'u1' })
+    const res = await svc.filterOptions({ permissions: perms(PERMISSIONS.LEADS_READ, PERMISSIONS.LEADS_READ_ALL, PERMISSIONS.LEADS_FILTER_ASSIGNMENT), userId: 'u1' })
     expect(res.executives).toEqual([{ id: 'u1', fullName: 'Pepe' }])
   })
 })

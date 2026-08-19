@@ -112,7 +112,7 @@ export type ListLeadsRepoParams = {
   scopeUserId: string | null
   campaignId?: string
   status?: string
-  executiveId?: string
+  assignment?: string
   q?: string
   page: number
   pageSize: number
@@ -204,7 +204,7 @@ export type ListLeadsQuery = {
   page?: number
   campaignId?: string
   status?: string
-  executiveId?: string
+  assignment?: string
   q?: string
 }
 

@@ -33,7 +33,11 @@ function applyLeadFilters(qb: LeadQB, p: ListLeadsRepoParams): void {
   if (p.scopeUserId) qb.andWhere('cl.assigned_executive_id = :scopeUserId', { scopeUserId: p.scopeUserId })
   if (p.campaignId) qb.andWhere('cl.campaign_id = :campaignId', { campaignId: p.campaignId })
   if (p.status) qb.andWhere('cl.status = :status', { status: p.status })
-  if (p.executiveId) qb.andWhere('cl.assigned_executive_id = :executiveId', { executiveId: p.executiveId })
+  if (p.assignment === 'unassigned') {
+    qb.andWhere('cl.assigned_executive_id IS NULL')
+  } else if (p.assignment && p.assignment.startsWith('user:')) {
+    qb.andWhere('cl.assigned_executive_id = :assignUserId', { assignUserId: p.assignment.slice(5) })
+  }
   if (p.q) {
     qb.andWhere('(cl.id::text = :qExact OR cl.context->>\'folio\' ILIKE :qLike)', { qExact: p.q, qLike: `%${p.q}%` })
   }

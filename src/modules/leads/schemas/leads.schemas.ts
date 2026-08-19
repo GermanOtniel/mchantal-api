@@ -29,7 +29,7 @@ export const ListLeadsQuerySchema = Type.Object({
   page: Type.Optional(Type.Integer({ minimum: 1 })),
   campaignId: Type.Optional(Type.String()),
   status: Type.Optional(Type.String()),
-  executiveId: Type.Optional(Type.String()),
+  assignment: Type.Optional(Type.String()),
   q: Type.Optional(Type.String()),
 })
 
