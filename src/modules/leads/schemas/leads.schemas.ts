@@ -39,3 +39,35 @@ export const FilterOptionsResponseSchema = Type.Object({
 })
 
 export const LeadIdParamsSchema = Type.Object({ id: Type.String() })
+
+export const LeadQAItemSchema = Type.Object({
+  storeAs: Type.String(),
+  prompt: Type.String(),
+  value: Type.String(),
+})
+
+export const LeadDetailResponseSchema = Type.Object({
+  id: Type.String(),
+  folio: Type.Union([Type.String(), Type.Null()]),
+  campaignId: Type.String(),
+  campaignName: Type.String(),
+  contact: Type.Object({
+    name: Type.Union([Type.String(), Type.Null()]),
+    waId: Type.String(),
+  }),
+  status: Type.String(),
+  assignedExecutive: Type.Union([
+    Type.Object({ id: Type.String(), fullName: Type.String() }),
+    Type.Null(),
+  ]),
+  needsReply: Type.Boolean(),
+  enrolledAt: Type.String(),
+  flowState: Type.Union([
+    Type.Literal('active'),
+    Type.Literal('paused'),
+    Type.Literal('completed'),
+    Type.Null(),
+  ]),
+  conversationId: Type.Union([Type.String(), Type.Null()]),
+  answers: Type.Array(LeadQAItemSchema),
+})

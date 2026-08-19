@@ -29,11 +29,13 @@ export type CampaignLeadData = {
   id: string
   contactId: string
   campaignId: string
-  campaign: { id: string; flowDefinition: FlowDefinition }
+  campaign: { id: string; name: string; flowDefinition: FlowDefinition }
   context: CampaignLeadContext
   assignmentMode?: 'executive' | 'pool' | 'manual' | null
   assignedExecutiveId?: string | null
   assignedAt?: Date | null
+  status: string
+  enrolledAt: Date
 }
 
 export type LeadFlowStateData = {
@@ -178,11 +180,13 @@ export type ContactData = { id: string; waId: string; profileName: string | null
 
 export interface WhatsAppContactRepositoryPort {
   upsert(waId: string, profileName?: string | null): Promise<ContactData>
+  findById(contactId: string): Promise<ContactData | null>
 }
 
 export interface WhatsAppConversationRepositoryWidePort
   extends WhatsAppConversationRepositoryPort {
   findOpenByContactId(contactId: string): Promise<ConversationData | null>
+  findOpenByLeadId(leadId: string): Promise<ConversationData | null>
   createOpen(contactId: string): Promise<ConversationData>
   clearNeedsReplyByLeadId(leadId: string): Promise<boolean>
 }
@@ -252,6 +256,23 @@ export type LeadsPageResponse = {
 export type LeadFilterOptions = {
   campaigns: { id: string; name: string }[]
   executives: { id: string; fullName: string }[]
+}
+
+export type LeadQAItem = { storeAs: string; prompt: string; value: string }
+
+export type LeadDetailResponse = {
+  id: string
+  folio: string | null
+  campaignId: string
+  campaignName: string
+  contact: { name: string | null; waId: string }
+  status: string
+  assignedExecutive: { id: string; fullName: string } | null
+  needsReply: boolean
+  enrolledAt: string
+  flowState: 'active' | 'paused' | 'completed' | null
+  conversationId: string | null
+  answers: LeadQAItem[]
 }
 
 export type LeadEventData = {

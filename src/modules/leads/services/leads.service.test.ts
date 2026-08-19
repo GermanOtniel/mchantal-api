@@ -5,7 +5,14 @@ import type {
   CampaignLeadData,
   LeadListItem,
   WhatsAppConversationRepositoryWidePort,
+  WhatsAppConversationRepositoryPort,
+  ConversationData,
+  LeadFlowStateData,
+  LeadFlowStateRepositoryPort,
+  MatcherDictionaryResolverPort,
+  ContactData,
 } from '../types/leads.types'
+import type { MatcherDictionaryData } from '../../matcher-dictionaries/types/dictionary.types'
 import type { CampaignRepositoryPort, Campaign } from '../../campaigns/types/campaign.types'
 import type { ExecutiveRepositoryPort, ExecutiveData } from '../../executives/types/executives.types'
 import { PERMISSIONS } from '../../../shared/rbac/permissions.catalog'
@@ -21,9 +28,11 @@ function leadItem(over: Partial<LeadListItem> = {}): LeadListItem {
 function leadData(over: Partial<CampaignLeadData> = {}): CampaignLeadData {
   return {
     id: 'l1', contactId: 'ct', campaignId: 'c1',
-    campaign: { id: 'c1', flowDefinition: { nodes: {} } },
+    campaign: { id: 'c1', name: 'Campaña 1', flowDefinition: { nodes: {} } },
     context: { folio: 'MC-1', answers: {} },
-    assignmentMode: 'executive', assignedExecutiveId: 'u1', assignedAt: new Date('2026-01-01'), ...over,
+    assignmentMode: 'executive', assignedExecutiveId: 'u1', assignedAt: new Date('2026-01-01'),
+    status: 'new', enrolledAt: new Date('2026-01-01'),
+    ...over,
   }
 }
 
@@ -44,7 +53,8 @@ function mkConvRepo(over: Partial<WhatsAppConversationRepositoryWidePort> = {}):
     findById: vi.fn(async () => null),
     setLead: vi.fn(async () => {}),
     findOpenByContactId: vi.fn(async () => null),
-    createOpen: vi.fn(async () => ({ id: 'conv', contactId: 'ct', status: 'open', leadId: null })),
+    findOpenByLeadId: vi.fn(async () => null),
+    createOpen: vi.fn(async () => ({ id: 'conv', contactId: 'ct', contactWaId: 'w', status: 'open', leadId: null, lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null })),
     touchLastMessage: vi.fn(async () => {}),
     clearNeedsReplyByLeadId: vi.fn(async () => true),
     ...over,
@@ -74,10 +84,56 @@ function mkExecRepo(over: Partial<ExecutiveRepositoryPort> = {}): ExecutiveRepos
   }
 }
 
+function mkFlowStateRepo(over: Partial<LeadFlowStateRepositoryPort> = {}): LeadFlowStateRepositoryPort {
+  return {
+    findActiveByCampaignLeadId: vi.fn(async () => null),
+    findByCampaignLeadId: vi.fn(async () => null),
+    create: vi.fn(async () => ({ id: 'fs', campaignLeadId: 'l1', currentNodeId: 'n1', context: {}, status: 'active', lastInteractionAt: new Date(), completedAt: null })),
+    save: vi.fn(async (s) => s),
+    ...over,
+  }
+}
+
+function mkDictRepo(over: Partial<MatcherDictionaryResolverPort> = {}): MatcherDictionaryResolverPort {
+  return {
+    findById: vi.fn(async () => null),
+    ...over,
+  }
+}
+
+function mkContactRepo(over: Partial<WhatsAppContactRepositoryPort> = {}): WhatsAppContactRepositoryPort {
+  return {
+    upsert: vi.fn(async () => ({ id: 'ct', waId: 'w', profileName: 'Ana' })),
+    findById: vi.fn(async () => ({ id: 'ct', waId: '5212345678', profileName: 'Ana' })),
+    ...over,
+  }
+}
+
 const PAGE_SIZE = 50
 
 function perms(...keys: string[]): Set<string> {
   return new Set(keys)
+}
+
+function mkSvc(over: {
+  leadsRepo?: CampaignLeadRepositoryPort
+  convRepo?: WhatsAppConversationRepositoryWidePort
+  campaignRepo?: CampaignRepositoryPort
+  execRepo?: ExecutiveRepositoryPort
+  flowStates?: LeadFlowStateRepositoryPort
+  dictionaries?: MatcherDictionaryResolverPort
+  contacts?: WhatsAppContactRepositoryPort
+} = {}): LeadsService {
+  return new LeadsService(
+    over.leadsRepo ?? mkLeadsRepo(),
+    over.convRepo ?? mkConvRepo(),
+    over.campaignRepo ?? mkCampaignRepo(),
+    over.execRepo ?? mkExecRepo(),
+    over.flowStates ?? mkFlowStateRepo(),
+    over.dictionaries ?? mkDictRepo(),
+    over.contacts ?? mkContactRepo(),
+    PAGE_SIZE,
+  )
 }
 
 describe('LeadsService.listLeads — permisos y scope', () => {
@@ -85,7 +141,7 @@ describe('LeadsService.listLeads — permisos y scope', () => {
   let leadsRepo: CampaignLeadRepositoryPort
   beforeEach(() => {
     leadsRepo = mkLeadsRepo()
-    svc = new LeadsService(leadsRepo, mkConvRepo(), mkCampaignRepo(), mkExecRepo(), PAGE_SIZE)
+    svc = mkSvc({ leadsRepo })
   })
 
   it('sin leads.read → 403', async () => {
@@ -108,7 +164,7 @@ describe('LeadsService.listLeads — descarte de filtros sin permiso', () => {
   let leadsRepo: CampaignLeadRepositoryPort
   beforeEach(() => {
     leadsRepo = mkLeadsRepo()
-    svc = new LeadsService(leadsRepo, mkConvRepo(), mkCampaignRepo(), mkExecRepo(), PAGE_SIZE)
+    svc = mkSvc({ leadsRepo })
   })
 
   it('descarta campaignId sin leads.filter.campaign', async () => {
@@ -154,7 +210,7 @@ describe('LeadsService.listLeads — descarte de filtros sin permiso', () => {
 describe('LeadsService.listLeads — paginación y shape', () => {
   it('page default 1, 400 si page < 1', async () => {
     const leadsRepo = mkLeadsRepo()
-    const svc = new LeadsService(leadsRepo, mkConvRepo(), mkCampaignRepo(), mkExecRepo(), PAGE_SIZE)
+    const svc = mkSvc({ leadsRepo })
     await svc.listLeads({ permissions: perms(PERMISSIONS.LEADS_READ), userId: 'u1', query: {} })
     expect(leadsRepo.listLeads).toHaveBeenCalledWith(expect.objectContaining({ page: 1, pageSize: 50 }))
     await expect(svc.listLeads({ permissions: perms(PERMISSIONS.LEADS_READ), userId: 'u1', query: { page: 0 } })).rejects.toMatchObject({ statusCode: 400 })
@@ -162,7 +218,7 @@ describe('LeadsService.listLeads — paginación y shape', () => {
 
   it('shape {items,page,pageSize,total,totalPages} y mapea fechas a ISO', async () => {
     const leadsRepo = mkLeadsRepo({ listLeads: vi.fn(async () => ({ items: [leadItem({ needsReply: true })], total: 60 })) })
-    const svc = new LeadsService(leadsRepo, mkConvRepo(), mkCampaignRepo(), mkExecRepo(), PAGE_SIZE)
+    const svc = mkSvc({ leadsRepo })
     const res = await svc.listLeads({ permissions: perms(PERMISSIONS.LEADS_READ), userId: 'u1', query: { page: 1 } })
     expect(res.page).toBe(1)
     expect(res.pageSize).toBe(50)
@@ -175,7 +231,7 @@ describe('LeadsService.listLeads — paginación y shape', () => {
 
   it('total 0 → totalPages 0', async () => {
     const leadsRepo = mkLeadsRepo({ listLeads: vi.fn(async () => ({ items: [], total: 0 })) })
-    const svc = new LeadsService(leadsRepo, mkConvRepo(), mkCampaignRepo(), mkExecRepo(), PAGE_SIZE)
+    const svc = mkSvc({ leadsRepo })
     const res = await svc.listLeads({ permissions: perms(PERMISSIONS.LEADS_READ), userId: 'u1', query: {} })
     expect(res.totalPages).toBe(0)
   })
@@ -183,25 +239,25 @@ describe('LeadsService.listLeads — paginación y shape', () => {
 
 describe('LeadsService.filterOptions', () => {
   it('sin leads.filter.campaign → campaigns vacío', async () => {
-    const svc = new LeadsService(mkLeadsRepo(), mkConvRepo(), mkCampaignRepo(), mkExecRepo(), PAGE_SIZE)
+    const svc = mkSvc()
     const res = await svc.filterOptions({ permissions: perms(PERMISSIONS.LEADS_READ, PERMISSIONS.LEADS_READ_ALL), userId: 'u1' })
     expect(res.campaigns).toEqual([])
   })
 
   it('con filter.campaign → campaigns populado', async () => {
-    const svc = new LeadsService(mkLeadsRepo(), mkConvRepo(), mkCampaignRepo(), mkExecRepo(), PAGE_SIZE)
+    const svc = mkSvc()
     const res = await svc.filterOptions({ permissions: perms(PERMISSIONS.LEADS_READ, PERMISSIONS.LEADS_READ_ALL, PERMISSIONS.LEADS_FILTER_CAMPAIGN), userId: 'u1' })
     expect(res.campaigns).toEqual([{ id: 'c1', name: 'Campaña 1' }])
   })
 
   it('sin leads.filter.assignment → executives vacío', async () => {
-    const svc = new LeadsService(mkLeadsRepo(), mkConvRepo(), mkCampaignRepo(), mkExecRepo(), PAGE_SIZE)
+    const svc = mkSvc()
     const res = await svc.filterOptions({ permissions: perms(PERMISSIONS.LEADS_READ, PERMISSIONS.LEADS_READ_ALL), userId: 'u1' })
     expect(res.executives).toEqual([])
   })
 
   it('con leads.filter.assignment → executives activos', async () => {
-    const svc = new LeadsService(mkLeadsRepo(), mkConvRepo(), mkCampaignRepo(), mkExecRepo(), PAGE_SIZE)
+    const svc = mkSvc()
     const res = await svc.filterOptions({ permissions: perms(PERMISSIONS.LEADS_READ, PERMISSIONS.LEADS_READ_ALL, PERMISSIONS.LEADS_FILTER_ASSIGNMENT), userId: 'u1' })
     expect(res.executives).toEqual([{ id: 'u1', fullName: 'Pepe' }])
   })
@@ -214,7 +270,7 @@ describe('LeadsService.clearNeedsReply', () => {
   beforeEach(() => {
     leadsRepo = mkLeadsRepo()
     convRepo = mkConvRepo()
-    svc = new LeadsService(leadsRepo, convRepo, mkCampaignRepo(), mkExecRepo(), PAGE_SIZE)
+    svc = mkSvc({ leadsRepo, convRepo })
   })
 
   it('sin leads.clear_needs_reply → 403', async () => {
@@ -246,5 +302,168 @@ describe('LeadsService.clearNeedsReply', () => {
     leadsRepo.findById = vi.fn(async () => leadData({ assignedExecutiveId: 'u1' }))
     await svc.clearNeedsReply({ permissions: perms(PERMISSIONS.LEADS_READ, PERMISSIONS.LEADS_CLEAR_NEEDS_REPLY), userId: 'u1', leadId: 'l1' })
     expect(convRepo.clearNeedsReplyByLeadId).toHaveBeenCalledWith('l1')
+  })
+})
+
+// ── getLead ──
+
+const textInputNode = {
+  id: 'n1',
+  type: 'text_input' as const,
+  body: '¿Cuál es tu ciudad?',
+  storeAs: 'city',
+  matcher: { dictionaryId: 'dict-city' },
+  transitions: {},
+}
+const freeTextNode = {
+  id: 'n2',
+  type: 'free_text' as const,
+  body: 'Comentarios',
+  storeAs: 'comments',
+}
+
+function convData(over: Partial<ConversationData> = {}): ConversationData {
+  return {
+    id: 'conv1', contactId: 'ct', contactWaId: '5212345678', status: 'open', leadId: 'l1',
+    lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null, ...over,
+  }
+}
+
+function flowStateData(over: Partial<LeadFlowStateData> = {}): LeadFlowStateData {
+  return {
+    id: 'fs1', campaignLeadId: 'l1', currentNodeId: 'n1', context: {}, status: 'active',
+    lastInteractionAt: new Date('2026-01-01'), completedAt: null, ...over,
+  }
+}
+
+function dictData(over: Partial<MatcherDictionaryData> = {}): MatcherDictionaryData {
+  return {
+    id: 'dict-city', slug: 'ciudad', name: 'Ciudad',
+    categories: [
+      { id: 'cat-cdmx', label: 'Ciudad de México', aliases: ['cdmx'] },
+      { id: 'cat-gdl', label: 'Guadalajara', aliases: ['gdl'] },
+    ],
+    isSystem: false, ...over,
+  }
+}
+
+describe('LeadsService.getLead', () => {
+  it('sin leads.attend → 403', async () => {
+    const svc = mkSvc()
+    await expect(svc.getLead({ permissions: perms(PERMISSIONS.LEADS_READ), userId: 'u1', leadId: 'l1' })).rejects.toMatchObject({ statusCode: 403 })
+  })
+
+  it('lead no existe → 404', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => null) })
+    const svc = mkSvc({ leadsRepo })
+    await expect(svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })).rejects.toMatchObject({ statusCode: 404, code: 'LEAD_NOT_FOUND' })
+  })
+
+  it('sin read.all y lead asignado a otro → 404', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ assignedExecutiveId: 'u2' })) })
+    const svc = mkSvc({ leadsRepo })
+    await expect(svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND), userId: 'u1', leadId: 'l1' })).rejects.toMatchObject({ statusCode: 404, code: 'LEAD_NOT_FOUND' })
+  })
+
+  it('Q&A con text_input → resuelve label del diccionario (cacheado)', async () => {
+    const leadsRepo = mkLeadsRepo({
+      findById: vi.fn(async () => leadData({
+        campaign: { id: 'c1', name: 'Campaña 1', flowDefinition: { nodes: { n1: textInputNode } } },
+      })),
+    })
+    const flowStates = mkFlowStateRepo({
+      findByCampaignLeadId: vi.fn(async () => flowStateData({ context: { answers: { city: 'cat-cdmx' } } })),
+    })
+    const dictionaries = mkDictRepo({ findById: vi.fn(async () => dictData()) })
+    const svc = mkSvc({ leadsRepo, flowStates, dictionaries })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.answers).toEqual([{ storeAs: 'city', prompt: '¿Cuál es tu ciudad?', value: 'Ciudad de México' }])
+    expect(dictionaries.findById).toHaveBeenCalledTimes(1)
+    expect(dictionaries.findById).toHaveBeenCalledWith('dict-city')
+  })
+
+  it('Q&A con free_text → value = texto crudo (no llama al diccionario)', async () => {
+    const leadsRepo = mkLeadsRepo({
+      findById: vi.fn(async () => leadData({
+        campaign: { id: 'c1', name: 'Campaña 1', flowDefinition: { nodes: { n2: freeTextNode } } },
+      })),
+    })
+    const flowStates = mkFlowStateRepo({
+      findByCampaignLeadId: vi.fn(async () => flowStateData({ context: { answers: { comments: 'Hola, me interesa' } } })),
+    })
+    const dictionaries = mkDictRepo({ findById: vi.fn(async () => null) })
+    const svc = mkSvc({ leadsRepo, flowStates, dictionaries })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.answers).toEqual([{ storeAs: 'comments', prompt: 'Comentarios', value: 'Hola, me interesa' }])
+    expect(dictionaries.findById).not.toHaveBeenCalled()
+  })
+
+  it('sin flowState → answers [] y flowState null', async () => {
+    const svc = mkSvc({ flowStates: mkFlowStateRepo({ findByCampaignLeadId: vi.fn(async () => null) }) })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.answers).toEqual([])
+    expect(res.flowState).toBeNull()
+  })
+
+  it('needsReply true: inbound con lastMessageAt > needsReplyClearedAt', async () => {
+    const convRepo = mkConvRepo({
+      findOpenByLeadId: vi.fn(async () => convData({
+        lastMessageDirection: 'inbound',
+        lastMessageAt: new Date('2026-02-01'),
+        needsReplyClearedAt: new Date('2026-01-01'),
+      })),
+    })
+    const svc = mkSvc({ convRepo })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.needsReply).toBe(true)
+  })
+
+  it('needsReply false: direction outbound', async () => {
+    const convRepo = mkConvRepo({
+      findOpenByLeadId: vi.fn(async () => convData({
+        lastMessageDirection: 'outbound',
+        lastMessageAt: new Date('2026-02-01'),
+        needsReplyClearedAt: null,
+      })),
+    })
+    const svc = mkSvc({ convRepo })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.needsReply).toBe(false)
+  })
+
+  it('needsReply false: no hay conversación', async () => {
+    const convRepo = mkConvRepo({ findOpenByLeadId: vi.fn(async () => null) })
+    const svc = mkSvc({ convRepo })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.needsReply).toBe(false)
+    expect(res.conversationId).toBeNull()
+  })
+
+  it('assignedExecutive: id set → {id, fullName}', async () => {
+    const execRepo = mkExecRepo({ findById: vi.fn(async () => ({ id: 'u1', fullName: 'Pepe Grillo', email: 'p@x', isActive: true, coverage: {}, lastAssignedAt: null })) })
+    const svc = mkSvc({ execRepo })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.assignedExecutive).toEqual({ id: 'u1', fullName: 'Pepe Grillo' })
+  })
+
+  it('assignedExecutive: null cuando no asignado', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ assignedExecutiveId: null })) })
+    const svc = mkSvc({ leadsRepo })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.assignedExecutive).toBeNull()
+  })
+
+  it('retorna folio, campaignName, status, enrolledAt iso, conversationId, contact', async () => {
+    const convRepo = mkConvRepo({ findOpenByLeadId: vi.fn(async () => convData({ id: 'conv-9' })) })
+    const flowStates = mkFlowStateRepo({ findByCampaignLeadId: vi.fn(async () => flowStateData({ status: 'paused' })) })
+    const svc = mkSvc({ convRepo, flowStates })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.folio).toBe('MC-1')
+    expect(res.campaignName).toBe('Campaña 1')
+    expect(res.status).toBe('new')
+    expect(res.enrolledAt).toBe(new Date('2026-01-01').toISOString())
+    expect(res.conversationId).toBe('conv-9')
+    expect(res.flowState).toBe('paused')
+    expect(res.contact).toEqual({ name: 'Ana', waId: '5212345678' })
   })
 })

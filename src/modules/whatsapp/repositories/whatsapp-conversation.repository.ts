@@ -55,6 +55,25 @@ export class WhatsAppConversationRepository
     return c ? toData(c) : null
   }
 
+  async findOpenByLeadId(leadId: string): Promise<ConversationData | null> {
+    const c = await this.repo.findOne({
+      where: { leadId, status: 'open' },
+      order: { createdAt: 'DESC' },
+      relations: ['contact'],
+    })
+    if (!c) return null
+    return {
+      id: c.id,
+      contactId: c.contactId,
+      contactWaId: c.contact?.waId ?? '',
+      status: c.status,
+      leadId: c.leadId,
+      lastMessageAt: c.lastMessageAt,
+      lastMessageDirection: c.lastMessageDirection,
+      needsReplyClearedAt: c.needsReplyClearedAt,
+    }
+  }
+
   async createOpen(contactId: string): Promise<ConversationData> {
     const c = await this.repo.save(this.repo.create({ contactId, status: 'open' }))
     return toData(c)

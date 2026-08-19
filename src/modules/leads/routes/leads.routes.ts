@@ -9,8 +9,11 @@ import { LeadsController } from '../controllers/leads.controller'
 import { LeadsService } from '../services/leads.service'
 import { CampaignLeadRepository } from '../repositories/campaign-lead.repository'
 import { WhatsAppConversationRepository } from '../../whatsapp/repositories/whatsapp-conversation.repository'
+import { WhatsAppContactRepository } from '../../whatsapp/repositories/whatsapp-contact.repository'
 import { CampaignRepository } from '../../campaigns/repositories/campaign.repository'
 import { ExecutiveRepository } from '../../executives/repositories/executive.repository'
+import { LeadFlowStateRepository } from '../repositories/lead-flow-state.repository'
+import { MatcherDictionaryRepository } from '../../matcher-dictionaries/repositories/matcher-dictionary.repository'
 import {
   LeadsPageResponseSchema,
   ListLeadsQuerySchema,
@@ -26,6 +29,9 @@ export const leadsPlugin: FastifyPluginAsyncTypebox = async (app) => {
     new WhatsAppConversationRepository(),
     new CampaignRepository(),
     new ExecutiveRepository(),
+    new LeadFlowStateRepository(),
+    new MatcherDictionaryRepository(),
+    new WhatsAppContactRepository(),
     PAGE_SIZE
   )
   const controller = new LeadsController(service)

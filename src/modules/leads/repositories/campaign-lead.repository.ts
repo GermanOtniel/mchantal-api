@@ -18,12 +18,15 @@ function toData(lead: CampaignLead): CampaignLeadData {
     campaignId: lead.campaignId,
     campaign: {
       id: lead.campaign.id,
+      name: lead.campaign.name,
       flowDefinition: lead.campaign.flowDefinition as unknown as FlowDefinition,
     },
     context: lead.context as unknown as CampaignLeadContext,
     assignmentMode: lead.assignmentMode,
     assignedExecutiveId: lead.assignedExecutiveId,
     assignedAt: lead.assignedAt,
+    status: lead.status,
+    enrolledAt: lead.enrolledAt,
   }
 }
 

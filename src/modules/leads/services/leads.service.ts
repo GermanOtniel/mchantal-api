@@ -3,15 +3,23 @@ import { PERMISSIONS } from '../../../shared/rbac/permissions.catalog'
 import { LEAD_STATUSES } from '../types/leads.types'
 import type {
   CampaignLeadRepositoryPort,
+  LeadDetailResponse,
   LeadFilterOptions,
   LeadItemResponse,
   LeadListItem,
+  LeadQAItem,
   LeadsPageResponse,
   ListLeadsQuery,
+  MatcherDictionaryResolverPort,
   WhatsAppConversationRepositoryWidePort,
+  WhatsAppContactRepositoryPort,
 } from '../types/leads.types'
+import type { MatcherDictionaryData } from '../../matcher-dictionaries/types/dictionary.types'
 import type { CampaignRepositoryPort } from '../../campaigns/types/campaign.types'
-import type { ExecutiveRepositoryPort } from '../../executives/types/executives.types'
+import type {
+  ExecutiveRepositoryPort,
+} from '../../executives/types/executives.types'
+import type { LeadFlowStateRepositoryPort } from '../types/leads.types'
 
 function toResponse(l: LeadListItem): LeadItemResponse {
   return {
@@ -38,6 +46,9 @@ export class LeadsService {
     private readonly conversations: WhatsAppConversationRepositoryWidePort,
     private readonly campaigns: CampaignRepositoryPort,
     private readonly executives: ExecutiveRepositoryPort,
+    private readonly flowStates: LeadFlowStateRepositoryPort,
+    private readonly dictionaries: MatcherDictionaryResolverPort,
+    private readonly contacts: WhatsAppContactRepositoryPort,
     private readonly pageSize: number,
   ) {}
 
@@ -137,6 +148,79 @@ export class LeadsService {
     const updated = await this.conversations.clearNeedsReplyByLeadId(leadId)
     if (!updated) {
       throw new HttpError('No open conversation for lead', 404, 'NO_OPEN_CONVERSATION')
+    }
+  }
+
+  async getLead(input: {
+    permissions: Set<string>
+    userId: string
+    leadId: string
+  }): Promise<LeadDetailResponse> {
+    const { permissions, userId, leadId } = input
+    if (!permissions.has(PERMISSIONS.LEADS_ATTEND)) {
+      throw new HttpError('Forbidden', 403, 'FORBIDDEN')
+    }
+    const lead = await this.campaignLeads.findById(leadId)
+    if (!lead) {
+      throw new HttpError('Lead not found', 404, 'LEAD_NOT_FOUND')
+    }
+    const scopeAll = permissions.has(PERMISSIONS.LEADS_READ_ALL)
+    if (!scopeAll && lead.assignedExecutiveId !== userId) {
+      throw new HttpError('Lead not found', 404, 'LEAD_NOT_FOUND')
+    }
+
+    const contact = lead.contactId ? await this.contacts.findById(lead.contactId) : null
+    const conversation = await this.conversations.findOpenByLeadId(leadId)
+    const flowState = await this.flowStates.findByCampaignLeadId(leadId)
+
+    // Q&A
+    const answers = (flowState?.context.answers as Record<string, string> | undefined) ?? {}
+    const flow = lead.campaign.flowDefinition
+    const dictCache = new Map<string, MatcherDictionaryData | null>()
+    const qa: LeadQAItem[] = []
+    for (const node of Object.values(flow?.nodes ?? {})) {
+      if (node.type !== 'text_input' && node.type !== 'free_text') continue
+      const raw = answers[node.storeAs]
+      if (raw === undefined) continue
+      let value = raw
+      if (node.type === 'text_input') {
+        let dict = dictCache.get(node.matcher.dictionaryId)
+        if (!dictCache.has(node.matcher.dictionaryId)) {
+          dict = await this.dictionaries.findById(node.matcher.dictionaryId)
+          dictCache.set(node.matcher.dictionaryId, dict)
+        }
+        value = dict?.categories.find((c) => c.id === raw)?.label ?? raw
+      }
+      const textNode = node as { body: string; storeAs: string }
+      qa.push({ storeAs: textNode.storeAs, prompt: textNode.body, value })
+    }
+
+    const needsReply =
+      conversation != null &&
+      conversation.lastMessageDirection === 'inbound' &&
+      conversation.lastMessageAt != null &&
+      (conversation.needsReplyClearedAt == null ||
+        conversation.lastMessageAt > conversation.needsReplyClearedAt)
+
+    let assignedExecutive: { id: string; fullName: string } | null = null
+    if (lead.assignedExecutiveId) {
+      const exec = await this.executives.findById(lead.assignedExecutiveId)
+      if (exec) assignedExecutive = { id: exec.id, fullName: exec.fullName }
+    }
+
+    return {
+      id: lead.id,
+      folio: lead.context.folio ?? null,
+      campaignId: lead.campaignId,
+      campaignName: lead.campaign.name,
+      contact: { name: contact?.profileName ?? null, waId: contact?.waId ?? '' },
+      status: lead.status,
+      assignedExecutive,
+      needsReply,
+      enrolledAt: lead.enrolledAt.toISOString(),
+      flowState: flowState?.status ?? null,
+      conversationId: conversation?.id ?? null,
+      answers: qa,
     }
   }
 }
