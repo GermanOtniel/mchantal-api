@@ -744,6 +744,77 @@ describe('LeadsService.getTimeline', () => {
     expect(res[1].createdAt).toBe(new Date('2026-03-02T11:00:00Z').toISOString())
     expect(typeof res[0].createdAt).toBe('string')
   })
+
+  it('reasignación: resuelve fullName de fromValue/toValue vía executives.findById', async () => {
+    const leadEvents = mkLeadEventsRepo({
+      listByLead: vi.fn(async () => [
+        leadEventData({ id: 'e1', type: 'reassignment', fromValue: 'u-prev', toValue: 'u-new' }),
+      ]),
+    })
+    const execRepo = mkExecRepo({
+      findById: vi.fn(async (id: string) => {
+        if (id === 'u-prev') return { id, fullName: 'Prev Exec', email: 'p@x', isActive: true, coverage: {}, lastAssignedAt: null }
+        if (id === 'u-new') return { id, fullName: 'New Exec', email: 'n@x', isActive: true, coverage: {}, lastAssignedAt: null }
+        return null
+      }),
+    })
+    const svc = mkSvc({ leadEvents, execRepo })
+    const res = await svc.getTimeline({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res[0].fromValue).toBe('Prev Exec')
+    expect(res[0].toValue).toBe('New Exec')
+    expect(execRepo.findById).toHaveBeenCalledWith('u-prev')
+    expect(execRepo.findById).toHaveBeenCalledWith('u-new')
+  })
+
+  it('reasignación: si el usuario no se encuentra → fallback al id crudo', async () => {
+    const leadEvents = mkLeadEventsRepo({
+      listByLead: vi.fn(async () => [
+        leadEventData({ id: 'e1', type: 'reassignment', fromValue: 'u-prev', toValue: 'u-missing' }),
+      ]),
+    })
+    const execRepo = mkExecRepo({
+      findById: vi.fn(async (id: string) => {
+        if (id === 'u-prev') return { id, fullName: 'Prev Exec', email: 'p@x', isActive: true, coverage: {}, lastAssignedAt: null }
+        return null
+      }),
+    })
+    const svc = mkSvc({ leadEvents, execRepo })
+    const res = await svc.getTimeline({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res[0].fromValue).toBe('Prev Exec')
+    expect(res[0].toValue).toBe('u-missing')
+  })
+
+  it('reasignación: fromValue null (desasignado) → queda null', async () => {
+    const leadEvents = mkLeadEventsRepo({
+      listByLead: vi.fn(async () => [
+        leadEventData({ id: 'e1', type: 'reassignment', fromValue: null, toValue: 'u-new' }),
+      ]),
+    })
+    const execRepo = mkExecRepo({
+      findById: vi.fn(async (id: string) => ({ id, fullName: 'New Exec', email: 'n@x', isActive: true, coverage: {}, lastAssignedAt: null })),
+    })
+    const svc = mkSvc({ leadEvents, execRepo })
+    const res = await svc.getTimeline({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res[0].fromValue).toBeNull()
+    expect(res[0].toValue).toBe('New Exec')
+    // No se consulta findById para null
+    expect(execRepo.findById).toHaveBeenCalledTimes(1)
+    expect(execRepo.findById).toHaveBeenCalledWith('u-new')
+  })
+
+  it('status_change: NO pasa por executives.findById (left as-is)', async () => {
+    const leadEvents = mkLeadEventsRepo({
+      listByLead: vi.fn(async () => [
+        leadEventData({ id: 'e1', type: 'status_change', fromValue: 'new', toValue: 'qualified' }),
+      ]),
+    })
+    const execRepo = mkExecRepo()
+    const svc = mkSvc({ leadEvents, execRepo })
+    const res = await svc.getTimeline({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res[0].fromValue).toBe('new')
+    expect(res[0].toValue).toBe('qualified')
+    expect(execRepo.findById).not.toHaveBeenCalled()
+  })
 })
 
 // ── reassign ──

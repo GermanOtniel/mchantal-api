@@ -288,7 +288,31 @@ export class LeadsService {
       throw new HttpError('Lead not found', 404, 'LEAD_NOT_FOUND')
     }
     const events = await this.leadEvents.listByLead(leadId)
-    return events.map((e) => ({ ...e, createdAt: e.createdAt.toISOString() }))
+
+    const execNameCache = new Map<string, string>()
+    const resolveAssigneeName = async (id: string | null): Promise<string | null> => {
+      if (id == null) return null
+      if (execNameCache.has(id)) return execNameCache.get(id)!
+      const exec = await this.executives.findById(id)
+      const name = exec?.fullName ?? id
+      execNameCache.set(id, name)
+      return name
+    }
+
+    const resolved = await Promise.all(
+      events.map(async (e) => {
+        if (e.type === 'reassignment') {
+          return {
+            ...e,
+            fromValue: await resolveAssigneeName(e.fromValue),
+            toValue: await resolveAssigneeName(e.toValue),
+            createdAt: e.createdAt.toISOString(),
+          }
+        }
+        return { ...e, createdAt: e.createdAt.toISOString() }
+      }),
+    )
+    return resolved
   }
 
   async reassign(input: {
