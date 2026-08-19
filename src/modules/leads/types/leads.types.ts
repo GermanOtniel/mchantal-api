@@ -189,6 +189,7 @@ export interface WhatsAppConversationRepositoryWidePort
   findOpenByLeadId(leadId: string): Promise<ConversationData | null>
   createOpen(contactId: string): Promise<ConversationData>
   clearNeedsReplyByLeadId(leadId: string): Promise<boolean>
+  clearNeedsReplyByContactId(contactId: string): Promise<boolean>
 }
 
 export type MessageData = {

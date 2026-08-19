@@ -58,7 +58,7 @@ function mkConvRepo(over: Partial<WhatsAppConversationRepositoryWidePort> = {}):
     findOpenByLeadId: vi.fn(async () => null),
     createOpen: vi.fn(async () => ({ id: 'conv', contactId: 'ct', contactWaId: 'w', status: 'open', leadId: null, lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null })),
     touchLastMessage: vi.fn(async () => {}),
-    clearNeedsReplyByLeadId: vi.fn(async () => true),
+    clearNeedsReplyByContactId: vi.fn(async () => true),
     ...over,
   }
 }
@@ -301,23 +301,23 @@ describe('LeadsService.clearNeedsReply', () => {
   it('sin read.all y lead asignado a otro → 404', async () => {
     leadsRepo.findById = vi.fn(async () => leadData({ assignedExecutiveId: 'u2' }))
     await expect(svc.clearNeedsReply({ permissions: perms(PERMISSIONS.LEADS_READ, PERMISSIONS.LEADS_CLEAR_NEEDS_REPLY), userId: 'u1', leadId: 'l1' })).rejects.toMatchObject({ statusCode: 404 })
-    expect(convRepo.clearNeedsReplyByLeadId).not.toHaveBeenCalled()
+    expect(convRepo.clearNeedsReplyByContactId).not.toHaveBeenCalled()
   })
 
   it('sin conversación abierta → 404', async () => {
-    convRepo.clearNeedsReplyByLeadId = vi.fn(async () => false)
+    convRepo.clearNeedsReplyByContactId = vi.fn(async () => false)
     await expect(svc.clearNeedsReply({ permissions: perms(PERMISSIONS.LEADS_READ, PERMISSIONS.LEADS_READ_ALL, PERMISSIONS.LEADS_CLEAR_NEEDS_REPLY), userId: 'u1', leadId: 'l1' })).rejects.toMatchObject({ statusCode: 404 })
   })
 
-  it('ok → llama clearNeedsReplyByLeadId', async () => {
+  it('ok → llama clearNeedsReplyByContactId con contactId', async () => {
     await svc.clearNeedsReply({ permissions: perms(PERMISSIONS.LEADS_READ, PERMISSIONS.LEADS_READ_ALL, PERMISSIONS.LEADS_CLEAR_NEEDS_REPLY), userId: 'u1', leadId: 'l1' })
-    expect(convRepo.clearNeedsReplyByLeadId).toHaveBeenCalledWith('l1')
+    expect(convRepo.clearNeedsReplyByContactId).toHaveBeenCalledWith('ct')
   })
 
   it('ok con scope propio (lead asignado a mí, sin read.all)', async () => {
     leadsRepo.findById = vi.fn(async () => leadData({ assignedExecutiveId: 'u1' }))
     await svc.clearNeedsReply({ permissions: perms(PERMISSIONS.LEADS_READ, PERMISSIONS.LEADS_CLEAR_NEEDS_REPLY), userId: 'u1', leadId: 'l1' })
-    expect(convRepo.clearNeedsReplyByLeadId).toHaveBeenCalledWith('l1')
+    expect(convRepo.clearNeedsReplyByContactId).toHaveBeenCalledWith('ct')
   })
 })
 

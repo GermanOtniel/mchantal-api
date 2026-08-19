@@ -162,7 +162,7 @@ export class LeadsService {
     if (!scopeAll && lead.assignedExecutiveId !== userId) {
       throw new HttpError('Lead not found', 404, 'LEAD_NOT_FOUND')
     }
-    const updated = await this.conversations.clearNeedsReplyByLeadId(leadId)
+    const updated = await this.conversations.clearNeedsReplyByContactId(lead.contactId)
     if (!updated) {
       throw new HttpError('No open conversation for lead', 404, 'NO_OPEN_CONVERSATION')
     }

@@ -90,4 +90,12 @@ export class WhatsAppConversationRepository
     )
     return (res.affected ?? 0) > 0
   }
+
+  async clearNeedsReplyByContactId(contactId: string): Promise<boolean> {
+    const res = await this.repo.update(
+      { contactId, status: 'open' },
+      { needsReplyClearedAt: new Date() }
+    )
+    return (res.affected ?? 0) > 0
+  }
 }
