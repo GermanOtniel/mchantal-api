@@ -20,6 +20,7 @@ import type { MatcherDictionaryData } from '../../matcher-dictionaries/types/dic
 import type { CampaignRepositoryPort } from '../../campaigns/types/campaign.types'
 import type {
   ExecutiveRepositoryPort,
+  AvailableExecutive,
 } from '../../executives/types/executives.types'
 import type { LeadFlowStateRepositoryPort } from '../types/leads.types'
 
@@ -349,5 +350,25 @@ export class LeadsService {
       throw new HttpError('Flow not paused', 400, 'FLOW_NOT_PAUSED')
     }
     await this.flowStates.save({ ...flowState, status: 'active' })
+  }
+
+  async listExecutives(input: {
+    permissions: Set<string>
+    userId: string
+    leadId: string
+  }): Promise<AvailableExecutive[]> {
+    const { permissions, userId, leadId } = input
+    if (!permissions.has(PERMISSIONS.LEADS_REASSIGN)) {
+      throw new HttpError('Forbidden', 403, 'FORBIDDEN')
+    }
+    const lead = await this.campaignLeads.findById(leadId)
+    if (!lead) {
+      throw new HttpError('Lead not found', 404, 'LEAD_NOT_FOUND')
+    }
+    const scopeAll = permissions.has(PERMISSIONS.LEADS_READ_ALL)
+    if (!scopeAll && lead.assignedExecutiveId !== userId) {
+      throw new HttpError('Lead not found', 404, 'LEAD_NOT_FOUND')
+    }
+    return this.executives.listAvailableForCampaign(lead.campaignId)
   }
 }

@@ -7,6 +7,8 @@ export type ExecutiveData = {
   lastAssignedAt: Date | null
 }
 
+export type AvailableExecutive = { userId: string; fullName: string; activeLeads: number }
+
 export type UpdateExecutiveData = {
   isActive?: boolean
   coverage?: Record<string, string[]>
@@ -17,6 +19,8 @@ export interface ExecutiveRepositoryPort {
   findById(id: string): Promise<ExecutiveData | null>
   findActiveByCoverage(attribute: string, value: string): Promise<ExecutiveData[]>
   findAllActive(): Promise<ExecutiveData[]>
+  // v1: campaignId accepted but not used to filter coverage yet (later refinement)
+  listAvailableForCampaign(campaignId: string): Promise<AvailableExecutive[]>
   update(id: string, patch: UpdateExecutiveData): Promise<ExecutiveData>
   touchLastAssignedAt(id: string): Promise<void>
 }

@@ -16,7 +16,7 @@ import type {
 } from '../types/leads.types'
 import type { MatcherDictionaryData } from '../../matcher-dictionaries/types/dictionary.types'
 import type { CampaignRepositoryPort, Campaign } from '../../campaigns/types/campaign.types'
-import type { ExecutiveRepositoryPort, ExecutiveData } from '../../executives/types/executives.types'
+import type { ExecutiveRepositoryPort, ExecutiveData, AvailableExecutive } from '../../executives/types/executives.types'
 import { PERMISSIONS } from '../../../shared/rbac/permissions.catalog'
 
 function leadItem(over: Partial<LeadListItem> = {}): LeadListItem {
@@ -80,6 +80,10 @@ function mkExecRepo(over: Partial<ExecutiveRepositoryPort> = {}): ExecutiveRepos
     findById: vi.fn(async () => null),
     findActiveByCoverage: vi.fn(async () => []),
     findAllActive: vi.fn(async () => [{ id: 'u1', fullName: 'Pepe', email: 'p@x', isActive: true, coverage: {}, lastAssignedAt: null } as ExecutiveData]),
+    listAvailableForCampaign: vi.fn(async () => [
+      { userId: 'u1', fullName: 'Pepe', activeLeads: 3 },
+      { userId: 'u2', fullName: 'Ana', activeLeads: 1 },
+    ] as AvailableExecutive[]),
     update: vi.fn(async () => ({}) as ExecutiveData),
     touchLastAssignedAt: vi.fn(async () => {}),
     ...over,
@@ -657,5 +661,50 @@ describe('LeadsService.resumeFlow', () => {
     const svc = mkSvc({ flowStates })
     await svc.resumeFlow({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
     expect(flowStates.save).toHaveBeenCalledWith(expect.objectContaining({ status: 'active' }))
+  })
+})
+
+// ── listExecutives ──
+
+describe('LeadsService.listExecutives', () => {
+  it('sin leads.reassign → 403', async () => {
+    const svc = mkSvc()
+    await expect(svc.listExecutives({ permissions: perms(PERMISSIONS.LEADS_ATTEND), userId: 'u1', leadId: 'l1' })).rejects.toMatchObject({ statusCode: 403, code: 'FORBIDDEN' })
+  })
+
+  it('lead no existe → 404', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => null) })
+    const svc = mkSvc({ leadsRepo })
+    await expect(svc.listExecutives({ permissions: perms(PERMISSIONS.LEADS_REASSIGN, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })).rejects.toMatchObject({ statusCode: 404, code: 'LEAD_NOT_FOUND' })
+  })
+
+  it('sin read.all y lead asignado a otro → 404', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ assignedExecutiveId: 'u2' })) })
+    const execRepo = mkExecRepo()
+    const svc = mkSvc({ leadsRepo, execRepo })
+    await expect(svc.listExecutives({ permissions: perms(PERMISSIONS.LEADS_REASSIGN), userId: 'u1', leadId: 'l1' })).rejects.toMatchObject({ statusCode: 404, code: 'LEAD_NOT_FOUND' })
+    expect(execRepo.listAvailableForCampaign).not.toHaveBeenCalled()
+  })
+
+  it('ok (read.all) → retorna lista del repo con el campaignId del lead', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ campaignId: 'c9' })) })
+    const execRepo = mkExecRepo()
+    const svc = mkSvc({ leadsRepo, execRepo })
+    const res = await svc.listExecutives({ permissions: perms(PERMISSIONS.LEADS_REASSIGN, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(execRepo.listAvailableForCampaign).toHaveBeenCalledWith('c9')
+    expect(res).toEqual([
+      { userId: 'u1', fullName: 'Pepe', activeLeads: 3 },
+      { userId: 'u2', fullName: 'Ana', activeLeads: 1 },
+    ])
+    expect(typeof res[0].activeLeads).toBe('number')
+  })
+
+  it('ok (scope propio) → retorna lista cuando el lead es mío', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ assignedExecutiveId: 'u1', campaignId: 'c1' })) })
+    const execRepo = mkExecRepo()
+    const svc = mkSvc({ leadsRepo, execRepo })
+    const res = await svc.listExecutives({ permissions: perms(PERMISSIONS.LEADS_REASSIGN), userId: 'u1', leadId: 'l1' })
+    expect(execRepo.listAvailableForCampaign).toHaveBeenCalledWith('c1')
+    expect(res).toHaveLength(2)
   })
 })
