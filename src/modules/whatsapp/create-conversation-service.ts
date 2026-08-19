@@ -41,6 +41,7 @@ export function getConversationService(): ConversationService {
       contacts,
       conversations,
       messages,
+      campaignLeads,
       flowEngine,
       realtimeBus: getRealtimeBus(),
     })

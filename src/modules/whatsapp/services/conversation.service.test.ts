@@ -5,6 +5,8 @@ import type { WhatsAppProvider } from '../../../shared/whatsapp/whatsapp-provide
 import type { WhatsAppSender } from '../../../shared/whatsapp/whatsapp-sender.interface'
 import type { NormalizedInboundEvent, NormalizedMessage, NormalizedMessageStatus } from '../../../shared/whatsapp/types/inbound.types'
 import type {
+  CampaignLeadData,
+  CampaignLeadRepositoryPort,
   ContactData,
   ConversationData,
   MessageData,
@@ -12,6 +14,7 @@ import type {
   WhatsAppConversationRepositoryWidePort,
   WhatsAppMessageRepositoryWidePort,
 } from '../../leads/types/leads.types'
+import { PERMISSIONS } from '../../../shared/rbac/permissions.catalog'
 import type { RealtimeBus } from '../realtime/realtime-bus'
 import type { WhatsAppRealtimeEvent } from '../realtime/types'
 
@@ -33,10 +36,23 @@ function makeRealtimeBus(): RealtimeBus & { published: WhatsAppRealtimeEvent[] }
   } as unknown as RealtimeBus & { published: WhatsAppRealtimeEvent[] }
 }
 
+function makeCampaignLead(over: Partial<CampaignLeadData> = {}): CampaignLeadData {
+  return {
+    id: 'lead-1',
+    contactId: 'ct1',
+    campaignId: 'camp-1',
+    campaign: { id: 'camp-1', flowDefinition: { version: 1, start: 'welcome', nodes: [] } },
+    context: {} as CampaignLeadData['context'],
+    assignedExecutiveId: null,
+    ...over,
+  }
+}
+
 function makeDeps(over: Partial<{
   contacts: WhatsAppContactRepositoryPort
   conversations: WhatsAppConversationRepositoryWidePort
   messages: WhatsAppMessageRepositoryWidePort
+  campaignLeads: CampaignLeadRepositoryPort
   flowEngine: { handleInbound: (s: WhatsAppSender, c: unknown) => Promise<void> }
   realtimeBus: RealtimeBus
 }> = {}) {
@@ -59,6 +75,7 @@ function makeDeps(over: Partial<{
       updateStatusAndMetadata: vi.fn(async () => {}),
       listByConversation: vi.fn(async () => [] as MessageData[]),
     } as WhatsAppMessageRepositoryWidePort,
+    campaignLeads: { findById: vi.fn(async () => null) } as CampaignLeadRepositoryPort,
     flowEngine: { handleInbound: vi.fn(async () => {}) },
     realtimeBus: makeRealtimeBus(),
     ...over,
@@ -288,5 +305,78 @@ describe('ConversationService.processInboundEvents — realtime publish', () => 
     const bus = deps.realtimeBus as unknown as { published: WhatsAppRealtimeEvent[] }
     expect(bus.published).toContainEqual({ type: 'message.created', payload: { conversationId: 'conv1', message: expect.objectContaining({ id: 'in-m', direction: 'inbound', sentAt: '2026-01-01T00:00:00.000Z' }) } })
     expect(bus.published).toContainEqual({ type: 'conversation.updated', payload: { conversationId: 'conv1', lastMessageAt: ts.toISOString(), lastMessageDirection: 'inbound', needsReply: true } })
+  })
+})
+
+describe('ConversationService.assertConversationInScope', () => {
+  it('conversación inexistente → HttpError 404 CONVERSATION_NOT_FOUND', async () => {
+    const deps = makeDeps()
+    const svc = new ConversationService(deps)
+    await expect(
+      svc.assertConversationInScope('missing', new Set<string>(), 'user-1')
+    ).rejects.toMatchObject({ statusCode: 404, code: 'CONVERSATION_NOT_FOUND' })
+  })
+
+  it('con leads.read.all → resuelve sin importar asignación del lead', async () => {
+    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: 'lead-1' }
+    const deps = makeDeps({
+      conversations: { findById: vi.fn(async () => conv), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => conv), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort,
+      campaignLeads: { findById: vi.fn(async () => makeCampaignLead({ assignedExecutiveId: 'someone-else' })) } as CampaignLeadRepositoryPort,
+    })
+    const svc = new ConversationService(deps)
+    await expect(
+      svc.assertConversationInScope('conv1', new Set([PERMISSIONS.LEADS_READ_ALL]), 'user-1')
+    ).resolves.toBeUndefined()
+    expect(deps.campaignLeads.findById).not.toHaveBeenCalled()
+  })
+
+  it('sin read.all, lead asignado al usuario → resuelve', async () => {
+    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: 'lead-1' }
+    const deps = makeDeps({
+      conversations: { findById: vi.fn(async () => conv), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => conv), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort,
+      campaignLeads: { findById: vi.fn(async () => makeCampaignLead({ assignedExecutiveId: 'user-1' })) } as CampaignLeadRepositoryPort,
+    })
+    const svc = new ConversationService(deps)
+    await expect(
+      svc.assertConversationInScope('conv1', new Set<string>(), 'user-1')
+    ).resolves.toBeUndefined()
+    expect(deps.campaignLeads.findById).toHaveBeenCalledWith('lead-1')
+  })
+
+  it('sin read.all, lead asignado a otro → HttpError 404 (no 403, para no leakar existencia)', async () => {
+    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: 'lead-1' }
+    const deps = makeDeps({
+      conversations: { findById: vi.fn(async () => conv), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => conv), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort,
+      campaignLeads: { findById: vi.fn(async () => makeCampaignLead({ assignedExecutiveId: 'someone-else' })) } as CampaignLeadRepositoryPort,
+    })
+    const svc = new ConversationService(deps)
+    await expect(
+      svc.assertConversationInScope('conv1', new Set<string>(), 'user-1')
+    ).rejects.toMatchObject({ statusCode: 404, code: 'CONVERSATION_NOT_FOUND' })
+  })
+
+  it('sin read.all, lead inexistente → HttpError 404', async () => {
+    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: 'lead-1' }
+    const deps = makeDeps({
+      conversations: { findById: vi.fn(async () => conv), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => conv), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort,
+      campaignLeads: { findById: vi.fn(async () => null) } as CampaignLeadRepositoryPort,
+    })
+    const svc = new ConversationService(deps)
+    await expect(
+      svc.assertConversationInScope('conv1', new Set<string>(), 'user-1')
+    ).rejects.toMatchObject({ statusCode: 404, code: 'CONVERSATION_NOT_FOUND' })
+  })
+
+  it('sin read.all, conversation con leadId null → HttpError 404', async () => {
+    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: null }
+    const deps = makeDeps({
+      conversations: { findById: vi.fn(async () => conv), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => conv), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort,
+      campaignLeads: { findById: vi.fn(async () => { throw new Error('should not be called') }) } as CampaignLeadRepositoryPort,
+    })
+    const svc = new ConversationService(deps)
+    await expect(
+      svc.assertConversationInScope('conv1', new Set<string>(), 'user-1')
+    ).rejects.toMatchObject({ statusCode: 404, code: 'CONVERSATION_NOT_FOUND' })
+    expect(deps.campaignLeads.findById).not.toHaveBeenCalled()
   })
 })

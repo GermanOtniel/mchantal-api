@@ -7,12 +7,14 @@ import type {
 } from '../../../shared/whatsapp/types/inbound.types'
 import type { InboundFlowContext } from '../../leads/types/leads.types'
 import type {
+  CampaignLeadRepositoryPort,
   MessageData,
   WhatsAppContactRepositoryPort,
   WhatsAppConversationRepositoryWidePort,
   WhatsAppMessageRepositoryWidePort,
 } from '../../leads/types/leads.types'
 import { HttpError } from '../../auth/http-error'
+import { PERMISSIONS } from '../../../shared/rbac/permissions.catalog'
 import type { RealtimeBus } from '../realtime/realtime-bus'
 import type { MessageRealtimePayload } from '../realtime/types'
 
@@ -33,6 +35,7 @@ export type ConversationServiceDeps = {
   contacts: WhatsAppContactRepositoryPort
   conversations: WhatsAppConversationRepositoryWidePort
   messages: WhatsAppMessageRepositoryWidePort
+  campaignLeads: CampaignLeadRepositoryPort
   flowEngine?: {
     handleInbound(sender: WhatsAppSender, ctx: InboundFlowContext): Promise<void>
   }
@@ -237,5 +240,31 @@ export class ConversationService {
       status: m.status,
       sentAt: m.sentAt.toISOString(),
     }))
+  }
+
+  /**
+   * Verifica que el usuario pueda acceder a la conversación. Un usuario con
+   * `leads.read.all` accede a todo. Sin ese permiso, sólo puede acceder a
+   * conversaciones vinculadas a un lead asignado a él. Lanza 404 (no 403)
+   * para no leakar la existencia de conversaciones ajenas.
+   */
+  async assertConversationInScope(
+    conversationId: string,
+    permissions: Set<string>,
+    userId: string
+  ): Promise<void> {
+    const conversation = await this.deps.conversations.findById(conversationId)
+    if (!conversation) {
+      throw new HttpError('Conversation not found', 404, 'CONVERSATION_NOT_FOUND')
+    }
+    if (permissions.has(PERMISSIONS.LEADS_READ_ALL)) return
+    const leadId = conversation.leadId
+    if (!leadId) {
+      throw new HttpError('Conversation not found', 404, 'CONVERSATION_NOT_FOUND')
+    }
+    const lead = await this.deps.campaignLeads.findById(leadId)
+    if (!lead || lead.assignedExecutiveId !== userId) {
+      throw new HttpError('Conversation not found', 404, 'CONVERSATION_NOT_FOUND')
+    }
   }
 }
