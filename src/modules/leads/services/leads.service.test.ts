@@ -337,6 +337,16 @@ const freeTextNode = {
   body: 'Comentarios',
   storeAs: 'comments',
 }
+const buttonsNode = {
+  id: 'n3',
+  type: 'interactive_buttons' as const,
+  body: '¿Cómo te enteraste?',
+  buttons: [
+    { id: 'comprar', title: 'Quiero comprar' },
+    { id: 'promo', title: 'Vi una promoción' },
+  ],
+  transitions: {},
+}
 
 function convData(over: Partial<ConversationData> = {}): ConversationData {
   return {
@@ -412,6 +422,68 @@ describe('LeadsService.getLead', () => {
     const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
     expect(res.answers).toEqual([{ storeAs: 'comments', prompt: 'Comentarios', value: 'Hola, me interesa' }])
     expect(dictionaries.findById).not.toHaveBeenCalled()
+  })
+
+  it('Q&A con interactive_buttons → resuelve title desde el button id', async () => {
+    const leadsRepo = mkLeadsRepo({
+      findById: vi.fn(async () => leadData({
+        campaign: { id: 'c1', name: 'Campaña 1', flowDefinition: { nodes: { n3: buttonsNode } } },
+      })),
+    })
+    const flowStates = mkFlowStateRepo({
+      findByCampaignLeadId: vi.fn(async () => flowStateData({ context: { answers: { n3: 'comprar' } } })),
+    })
+    const dictionaries = mkDictRepo({ findById: vi.fn(async () => null) })
+    const svc = mkSvc({ leadsRepo, flowStates, dictionaries })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.answers).toEqual([{ storeAs: 'n3', prompt: '¿Cómo te enteraste?', value: 'Quiero comprar' }])
+    expect(dictionaries.findById).not.toHaveBeenCalled()
+  })
+
+  it('Q&A con interactive_buttons: button id no listado → value = replyId crudo', async () => {
+    const leadsRepo = mkLeadsRepo({
+      findById: vi.fn(async () => leadData({
+        campaign: { id: 'c1', name: 'Campaña 1', flowDefinition: { nodes: { n3: buttonsNode } } },
+      })),
+    })
+    const flowStates = mkFlowStateRepo({
+      findByCampaignLeadId: vi.fn(async () => flowStateData({ context: { answers: { n3: 'otro' } } })),
+    })
+    const svc = mkSvc({ leadsRepo, flowStates })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.answers).toEqual([{ storeAs: 'n3', prompt: '¿Cómo te enteraste?', value: 'otro' }])
+  })
+
+  it('Q&A con interactive_buttons: sin selección (answers[n3] undefined) → no aparece', async () => {
+    const leadsRepo = mkLeadsRepo({
+      findById: vi.fn(async () => leadData({
+        campaign: { id: 'c1', name: 'Campaña 1', flowDefinition: { nodes: { n3: buttonsNode } } },
+      })),
+    })
+    const flowStates = mkFlowStateRepo({
+      findByCampaignLeadId: vi.fn(async () => flowStateData({ context: { answers: {} } })),
+    })
+    const svc = mkSvc({ leadsRepo, flowStates })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.answers).toEqual([])
+  })
+
+  it('Q&A mixto: interactive_buttons + text_input ambos presentes', async () => {
+    const leadsRepo = mkLeadsRepo({
+      findById: vi.fn(async () => leadData({
+        campaign: { id: 'c1', name: 'Campaña 1', flowDefinition: { nodes: { n1: textInputNode, n3: buttonsNode } } },
+      })),
+    })
+    const flowStates = mkFlowStateRepo({
+      findByCampaignLeadId: vi.fn(async () => flowStateData({ context: { answers: { city: 'cat-cdmx', n3: 'promo' } } })),
+    })
+    const dictionaries = mkDictRepo({ findById: vi.fn(async () => dictData()) })
+    const svc = mkSvc({ leadsRepo, flowStates, dictionaries })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.answers).toEqual([
+      { storeAs: 'city', prompt: '¿Cuál es tu ciudad?', value: 'Ciudad de México' },
+      { storeAs: 'n3', prompt: '¿Cómo te enteraste?', value: 'Vi una promoción' },
+    ])
   })
 
   it('sin flowState → answers [] y flowState null', async () => {

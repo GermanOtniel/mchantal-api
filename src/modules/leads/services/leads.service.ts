@@ -183,6 +183,13 @@ export class LeadsService {
     const dictCache = new Map<string, MatcherDictionaryData | null>()
     const qa: LeadQAItem[] = []
     for (const node of Object.values(flow?.nodes ?? {})) {
+      if (node.type === 'interactive_buttons') {
+        const replyId = answers[node.id]
+        if (replyId === undefined) continue
+        const button = node.buttons.find((b) => b.id === replyId)
+        qa.push({ storeAs: node.id, prompt: node.body, value: button?.title ?? replyId })
+        continue
+      }
       if (node.type !== 'text_input' && node.type !== 'free_text') continue
       const raw = answers[node.storeAs]
       if (raw === undefined) continue
@@ -195,8 +202,7 @@ export class LeadsService {
         }
         value = dict?.categories.find((c) => c.id === raw)?.label ?? raw
       }
-      const textNode = node as { body: string; storeAs: string }
-      qa.push({ storeAs: textNode.storeAs, prompt: textNode.body, value })
+      qa.push({ storeAs: node.storeAs, prompt: node.body, value })
     }
 
     const needsReply =
