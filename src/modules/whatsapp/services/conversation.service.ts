@@ -187,6 +187,22 @@ export class ConversationService {
     } else {
       await this.deps.messages.updateStatus(status.providerMessageId, status.status)
     }
+
+    // best-effort: publica el status por SSE para que las palomitas
+    // (sent/delivered/read) aparezcan en tiempo real, sin esperar al poll.
+    // Un fallo en el publish NO debe romper el update de status en BD.
+    try {
+      this.deps.realtimeBus?.publish({
+        type: 'message.status_updated',
+        payload: {
+          conversationId: existing.conversationId,
+          providerMessageId: status.providerMessageId,
+          status: status.status,
+        },
+      })
+    } catch {
+      // best-effort: el status ya quedó en BD
+    }
   }
 
   async sendTextMessage(

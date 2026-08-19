@@ -160,6 +160,34 @@ describe('ConversationService.processInboundEvents — status', () => {
     await svc.processInboundEvents([{ kind: 'status', status: status({}) }], {} as WhatsAppSender)
     expect(deps.messages.updateStatus).not.toHaveBeenCalled()
   })
+
+  it('publica message.status_updated con {conversationId, providerMessageId, status} tras actualizar el status', async () => {
+    const existing: MessageData = { id: 'm', conversationId: 'conv-9', direction: 'outbound', providerMessageId: 'out-1', type: 'text', bodyText: 'x', status: 'sent', metadata: {}, sentAt: new Date() }
+    const deps = makeDeps({ messages: { create: vi.fn(async () => ({})), findByProviderMessageId: vi.fn(async () => existing), updateStatus: vi.fn(async () => {}), updateStatusAndMetadata: vi.fn(async () => {}) } as unknown as WhatsAppMessageRepositoryWidePort })
+    const svc = new ConversationService(deps)
+    await svc.processInboundEvents([{ kind: 'status', status: status({ providerMessageId: 'out-1', status: 'delivered' }) }], {} as WhatsAppSender)
+    expect(deps.messages.updateStatus).toHaveBeenCalledWith('out-1', 'delivered')
+    const bus = deps.realtimeBus as unknown as { published: WhatsAppRealtimeEvent[] }
+    expect(bus.published).toContainEqual({ type: 'message.status_updated', payload: { conversationId: 'conv-9', providerMessageId: 'out-1', status: 'delivered' } })
+  })
+
+  it('failed con errorMessage: publica status_updated con status failed tras updateStatusAndMetadata', async () => {
+    const existing: MessageData = { id: 'm', conversationId: 'conv-9', direction: 'outbound', providerMessageId: 'out-1', type: 'text', bodyText: 'x', status: 'sent', metadata: {}, sentAt: new Date() }
+    const deps = makeDeps({ messages: { create: vi.fn(async () => ({})), findByProviderMessageId: vi.fn(async () => existing), updateStatus: vi.fn(async () => {}), updateStatusAndMetadata: vi.fn(async () => {}) } as unknown as WhatsAppMessageRepositoryWidePort })
+    const svc = new ConversationService(deps)
+    await svc.processInboundEvents([{ kind: 'status', status: status({ providerMessageId: 'out-1', status: 'failed', errorMessage: 'blocked' }) }], {} as WhatsAppSender)
+    expect(deps.messages.updateStatusAndMetadata).toHaveBeenCalledWith('out-1', 'failed', { error: 'blocked' })
+    const bus = deps.realtimeBus as unknown as { published: WhatsAppRealtimeEvent[] }
+    expect(bus.published).toContainEqual({ type: 'message.status_updated', payload: { conversationId: 'conv-9', providerMessageId: 'out-1', status: 'failed' } })
+  })
+
+  it('status para mensaje inexistente: no publica realtime', async () => {
+    const deps = makeDeps({ messages: { create: vi.fn(async () => ({})), findByProviderMessageId: vi.fn(async () => null), updateStatus: vi.fn(async () => {}), updateStatusAndMetadata: vi.fn(async () => {}) } as unknown as WhatsAppMessageRepositoryWidePort })
+    const svc = new ConversationService(deps)
+    await svc.processInboundEvents([{ kind: 'status', status: status({ providerMessageId: 'unknown', status: 'delivered' }) }], {} as WhatsAppSender)
+    const bus = deps.realtimeBus as unknown as { published: WhatsAppRealtimeEvent[] }
+    expect(bus.published.filter((e) => e.type === 'message.status_updated')).toEqual([])
+  })
 })
 
 describe('ConversationService.sendTextMessage', () => {
