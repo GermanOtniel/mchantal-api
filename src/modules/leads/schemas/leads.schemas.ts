@@ -71,3 +71,33 @@ export const LeadDetailResponseSchema = Type.Object({
   conversationId: Type.Union([Type.String(), Type.Null()]),
   answers: Type.Array(LeadQAItemSchema),
 })
+
+export const LeadEventSchema = Type.Object({
+  id: Type.String(),
+  leadId: Type.String(),
+  type: Type.String(),
+  fromValue: Type.Union([Type.String(), Type.Null()]),
+  toValue: Type.Union([Type.String(), Type.Null()]),
+  reason: Type.Union([Type.String(), Type.Null()]),
+  milestoneKind: Type.Union([Type.String(), Type.Null()]),
+  actorUserId: Type.Union([Type.String(), Type.Null()]),
+  createdAt: Type.String(),
+})
+export const LeadTimelineResponseSchema = Type.Object({ items: Type.Array(LeadEventSchema) })
+
+export const ReassignBodySchema = Type.Object({
+  assigneeUserId: Type.Union([Type.String(), Type.Null()]),
+  reason: Type.String({ minLength: 1 }),
+}, { additionalProperties: false })
+
+export const ChangeStatusBodySchema = Type.Object({
+  status: Type.String(),
+  reason: Type.String({ minLength: 1 }),
+}, { additionalProperties: false })
+
+export const AvailableExecutiveSchema = Type.Object({
+  userId: Type.String(),
+  fullName: Type.String(),
+  activeLeads: Type.Integer(),
+})
+export const ExecutivesResponseSchema = Type.Object({ items: Type.Array(AvailableExecutiveSchema) })

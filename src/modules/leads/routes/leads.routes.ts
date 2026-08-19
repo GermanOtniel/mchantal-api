@@ -20,6 +20,11 @@ import {
   ListLeadsQuerySchema,
   FilterOptionsResponseSchema,
   LeadIdParamsSchema,
+  LeadDetailResponseSchema,
+  LeadTimelineResponseSchema,
+  ReassignBodySchema,
+  ChangeStatusBodySchema,
+  ExecutivesResponseSchema,
 } from '../schemas/leads.schemas'
 
 const PAGE_SIZE = 50
@@ -66,5 +71,67 @@ export const leadsPlugin: FastifyPluginAsyncTypebox = async (app) => {
       schema: { params: LeadIdParamsSchema, response: { 204: { type: 'null' } } },
     },
     controller.clearNeedsReply
+  )
+
+  app.get(
+    '/:id',
+    {
+      preHandler: requirePermission(PERMISSIONS.LEADS_ATTEND),
+      schema: { params: LeadIdParamsSchema, response: { 200: LeadDetailResponseSchema } },
+    },
+    controller.getLead
+  )
+
+  app.get(
+    '/:id/timeline',
+    {
+      preHandler: requirePermission(PERMISSIONS.LEADS_ATTEND),
+      schema: { params: LeadIdParamsSchema, response: { 200: LeadTimelineResponseSchema } },
+    },
+    controller.getTimeline
+  )
+
+  app.post(
+    '/:id/reassign',
+    {
+      preHandler: requirePermission(PERMISSIONS.LEADS_REASSIGN),
+      schema: {
+        params: LeadIdParamsSchema,
+        body: ReassignBodySchema,
+        response: { 204: { type: 'null' } },
+      },
+    },
+    controller.reassign
+  )
+
+  app.post(
+    '/:id/status',
+    {
+      preHandler: requirePermission(PERMISSIONS.LEADS_CHANGE_STATUS),
+      schema: {
+        params: LeadIdParamsSchema,
+        body: ChangeStatusBodySchema,
+        response: { 204: { type: 'null' } },
+      },
+    },
+    controller.changeStatus
+  )
+
+  app.post(
+    '/:id/resume-flow',
+    {
+      preHandler: requirePermission(PERMISSIONS.LEADS_ATTEND),
+      schema: { params: LeadIdParamsSchema, response: { 204: { type: 'null' } } },
+    },
+    controller.resumeFlow
+  )
+
+  app.get(
+    '/:id/executives',
+    {
+      preHandler: requirePermission(PERMISSIONS.LEADS_REASSIGN),
+      schema: { params: LeadIdParamsSchema, response: { 200: ExecutivesResponseSchema } },
+    },
+    controller.listExecutives
   )
 }
