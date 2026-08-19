@@ -18,8 +18,14 @@ export function getSseConnectionManager(): SseConnectionManager {
 }
 
 export async function closeRealtimeInfrastructure(): Promise<void> {
-  await sseManager?.close()
-  await bus?.close()
+  const sse = sseManager
+  const busRef = bus
   sseManager = null
   bus = null
+  try {
+    await sse?.close()
+    await busRef?.close()
+  } catch {
+    // best-effort shutdown; singletons already nulled
+  }
 }

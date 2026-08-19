@@ -56,6 +56,8 @@ export class SseConnectionManager {
     response.on('close', () => {
       this.removeClient(client)
     })
+    // Prevent an unhandled 'error' event on abrupt disconnect from crashing the process.
+    response.on('error', () => this.removeClient(client))
   }
 
   private removeClient(client: SseClient): void {
