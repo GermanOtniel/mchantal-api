@@ -96,13 +96,6 @@ export class ConversationService {
       conversation = await this.deps.conversations.createOpen(contact.id)
     }
 
-    const priorInbound = await this.deps.messages.countInboundByConversation(conversation.id)
-    const isFirstInbound = priorInbound === 0
-    const isReEngagement =
-      conversation.needsReplyClearedAt != null &&
-      (conversation.lastMessageAt == null ||
-        conversation.lastMessageAt <= conversation.needsReplyClearedAt)
-
     const type = message.type === 'interactive' ? 'interactive' : message.type
 
     const savedMessage = await this.deps.messages.create({
@@ -122,38 +115,53 @@ export class ConversationService {
 
     await this.deps.conversations.touchLastMessage(conversation.id, message.timestamp, 'inbound')
 
-    this.deps.realtimeBus?.publish({
-      type: 'message.created',
-      payload: {
-        conversationId: conversation.id,
-        message: toMessagePayload(savedMessage),
-      },
-    })
-    this.publishConversationUpdated(conversation.id, message.timestamp, 'inbound')
+    // best-effort side-effects: milestones + realtime. A DB hiccup on
+    // countInboundByConversation or leadEvents.record must NOT break inbound
+    // processing (the inbound dedup already protects against duplicates).
+    try {
+      const priorInbound = await this.deps.messages.countInboundByConversation(conversation.id)
+      const isFirstInbound = priorInbound === 0
+      const isReEngagement =
+        conversation.needsReplyClearedAt != null &&
+        conversation.lastMessageAt != null &&
+        conversation.lastMessageAt <= conversation.needsReplyClearedAt
 
-    if (conversation.leadId) {
-      if (isFirstInbound) {
-        await this.deps.leadEvents.record({
-          leadId: conversation.leadId,
-          type: 'message_milestone',
-          fromValue: null,
-          toValue: null,
-          reason: null,
-          milestoneKind: 'first_inbound',
-          actorUserId: null,
-        })
+      this.deps.realtimeBus?.publish({
+        type: 'message.created',
+        payload: {
+          conversationId: conversation.id,
+          message: toMessagePayload(savedMessage),
+        },
+      })
+      this.publishConversationUpdated(conversation.id, message.timestamp, 'inbound')
+
+      if (conversation.leadId) {
+        if (isFirstInbound) {
+          await this.deps.leadEvents.record({
+            leadId: conversation.leadId,
+            type: 'message_milestone',
+            fromValue: null,
+            toValue: null,
+            reason: null,
+            milestoneKind: 'first_inbound',
+            actorUserId: null,
+          })
+        }
+        if (isReEngagement) {
+          await this.deps.leadEvents.record({
+            leadId: conversation.leadId,
+            type: 'message_milestone',
+            fromValue: null,
+            toValue: null,
+            reason: null,
+            milestoneKind: 're_engagement',
+            actorUserId: null,
+          })
+        }
       }
-      if (isReEngagement) {
-        await this.deps.leadEvents.record({
-          leadId: conversation.leadId,
-          type: 'message_milestone',
-          fromValue: null,
-          toValue: null,
-          reason: null,
-          milestoneKind: 're_engagement',
-          actorUserId: null,
-        })
-      }
+    } catch (err) {
+      // best-effort: side-effects must not fail inbound processing
+      console.error('[conversation] best-effort inbound side-effects failed', err)
     }
 
     return {
@@ -231,30 +239,40 @@ export class ConversationService {
 
     await this.deps.conversations.touchLastMessage(conversation.id, sentAt, 'outbound')
 
-    this.deps.realtimeBus?.publish({
-      type: 'message.created',
-      payload: {
-        conversationId: conversation.id,
-        message: toMessagePayload(savedMessage),
-      },
-    })
-    this.publishConversationUpdated(conversation.id, sentAt, 'outbound')
-
-    const leadId = conversation.leadId
-    if (leadId) {
-      await this.deps.leadEvents.record({
-        leadId,
-        type: 'message_milestone',
-        fromValue: null,
-        toValue: null,
-        reason: null,
-        milestoneKind: 'last_outbound',
-        actorUserId: input.actorUserId ?? null,
+    // best-effort post-send side-effects: realtime + last_outbound milestone +
+    // flow-pause. These must NOT fail the send response; otherwise the controller
+    // returns 500, the client retries, and a DUPLICATE outbound WhatsApp message
+    // is sent (outbound has no dedup). The provider send + message persist above
+    // are the source of truth and determine the response.
+    try {
+      this.deps.realtimeBus?.publish({
+        type: 'message.created',
+        payload: {
+          conversationId: conversation.id,
+          message: toMessagePayload(savedMessage),
+        },
       })
-      const flowState = await this.deps.flowStates.findByCampaignLeadId(leadId)
-      if (flowState && flowState.status === 'active') {
-        await this.deps.flowStates.save({ ...flowState, status: 'paused' })
+      this.publishConversationUpdated(conversation.id, sentAt, 'outbound')
+
+      const leadId = conversation.leadId
+      if (leadId) {
+        await this.deps.leadEvents.record({
+          leadId,
+          type: 'message_milestone',
+          fromValue: null,
+          toValue: null,
+          reason: null,
+          milestoneKind: 'last_outbound',
+          actorUserId: input.actorUserId ?? null,
+        })
+        const flowState = await this.deps.flowStates.findByCampaignLeadId(leadId)
+        if (flowState && flowState.status === 'active') {
+          await this.deps.flowStates.save({ ...flowState, status: 'paused' })
+        }
       }
+    } catch (err) {
+      // best-effort: side-effects must not fail the send (avoid duplicate outbound)
+      console.error('[conversation] best-effort post-send side-effects failed', err)
     }
 
     return { providerMessageId: result.providerMessageId, conversationId: conversation.id }

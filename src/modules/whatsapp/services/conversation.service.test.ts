@@ -478,6 +478,23 @@ describe('ConversationService.sendTextMessage — flow pause + last_outbound mil
     expect(deps.leadEvents.record).toHaveBeenCalledWith(expect.objectContaining({ milestoneKind: 'last_outbound', actorUserId: null }))
   })
 
+  it('best-effort: si leadEvents.record lanza, sendTextMessage NO falla y devuelve {providerMessageId, conversationId} (evita retry que duplicaría el outbound)', async () => {
+    const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: 'lead-1', lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null }
+    const deps = makeDeps({
+      conversations: { findById: vi.fn(async () => conv), setLead: vi.fn(async () => {}), findOpenByContactId: vi.fn(async () => null), createOpen: vi.fn(async () => conv), touchLastMessage: vi.fn(async () => {}), clearNeedsReplyByLeadId: vi.fn(async () => true) } as WhatsAppConversationRepositoryWidePort,
+      flowStates: { findByCampaignLeadId: vi.fn(async () => flowState({ status: 'active' })), save: vi.fn(async (s) => s) } as unknown as LeadFlowStateRepositoryPort,
+      leadEvents: { record: vi.fn(async () => { throw new Error('db down') }) } as unknown as LeadEventsRepositoryPort,
+    })
+    const svc = new ConversationService(deps)
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const res = await svc.sendTextMessage(makeProvider('wa-out-9'), { conversationId: 'conv1', text: 'hola', actorUserId: 'user-9' })
+    errSpy.mockRestore()
+
+    expect(res).toEqual({ providerMessageId: 'wa-out-9', conversationId: 'conv1' })
+    // flow-pause no se alcanzó porque el throw cortó el bloque best-effort
+    expect(deps.flowStates.save).not.toHaveBeenCalled()
+  })
+
   it('sin leadId: no registra milestone ni pausa', async () => {
     const conv: ConversationData = { id: 'conv1', contactId: 'ct1', contactWaId: '12345', status: 'open', leadId: null, lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null }
     const deps = makeDeps({
@@ -543,7 +560,7 @@ describe('ConversationService.processInboundMessage — first_inbound + re_engag
     expect(deps.leadEvents.record).not.toHaveBeenCalledWith(expect.objectContaining({ milestoneKind: 'first_inbound' }))
   })
 
-  it('needsReplyClearedAt set y lastMessageAt null: registra re_engagement', async () => {
+  it('guard: needsReplyClearedAt set y lastMessageAt null y priorInbound=0: registra first_inbound pero NO re_engagement', async () => {
     const deps = makeDeps({
       conversations: {
         findById: vi.fn(async () => null),
@@ -559,14 +576,15 @@ describe('ConversationService.processInboundMessage — first_inbound + re_engag
         updateStatus: vi.fn(async () => {}),
         updateStatusAndMetadata: vi.fn(async () => {}),
         listByConversation: vi.fn(async () => []),
-        countInboundByConversation: vi.fn(async () => 1),
+        countInboundByConversation: vi.fn(async () => 0),
       } as unknown as WhatsAppMessageRepositoryWidePort,
       leadEvents: { record: vi.fn(async (d) => d) } as unknown as LeadEventsRepositoryPort,
     })
     const svc = new ConversationService(deps)
     await svc.processInboundEvents([{ kind: 'message', message: msg({ providerMessageId: 'm-x' }) }], {} as WhatsAppSender)
 
-    expect(deps.leadEvents.record).toHaveBeenCalledWith(expect.objectContaining({ leadId: 'lead-1', type: 'message_milestone', milestoneKind: 're_engagement', actorUserId: null, fromValue: null, toValue: null, reason: null }))
+    expect(deps.leadEvents.record).toHaveBeenCalledWith(expect.objectContaining({ milestoneKind: 'first_inbound' }))
+    expect(deps.leadEvents.record).not.toHaveBeenCalledWith(expect.objectContaining({ milestoneKind: 're_engagement' }))
   })
 
   it('needsReplyClearedAt set y lastMessageAt <= clearedAt: registra re_engagement', async () => {
@@ -646,5 +664,36 @@ describe('ConversationService.processInboundMessage — first_inbound + re_engag
     await svc.processInboundEvents([{ kind: 'message', message: msg({ providerMessageId: 'm-x' }) }], {} as WhatsAppSender)
 
     expect(deps.leadEvents.record).not.toHaveBeenCalled()
+  })
+
+  it('best-effort: si leadEvents.record lanza en inbound, processInboundEvents NO falla y aún despacha al engine (el dedup protege contra duplicados)', async () => {
+    const deps = makeDeps({
+      conversations: {
+        findById: vi.fn(async () => null),
+        setLead: vi.fn(async () => {}),
+        findOpenByContactId: vi.fn(async () => inboundConv()),
+        createOpen: vi.fn(async () => inboundConv()),
+        touchLastMessage: vi.fn(async () => {}),
+        clearNeedsReplyByLeadId: vi.fn(async () => true),
+      } as WhatsAppConversationRepositoryWidePort,
+      messages: {
+        create: vi.fn(async () => ({ id: 'in-m', conversationId: 'conv1', direction: 'inbound', providerMessageId: 'in-x', type: 'text', bodyText: 'hola', status: 'delivered', metadata: {}, sentAt: new Date('2026-01-01T00:00:00Z') } as MessageData)),
+        findByProviderMessageId: vi.fn(async () => null),
+        updateStatus: vi.fn(async () => {}),
+        updateStatusAndMetadata: vi.fn(async () => {}),
+        listByConversation: vi.fn(async () => []),
+        countInboundByConversation: vi.fn(async () => 0),
+      } as unknown as WhatsAppMessageRepositoryWidePort,
+      leadEvents: { record: vi.fn(async () => { throw new Error('db down') }) } as unknown as LeadEventsRepositoryPort,
+    })
+    const svc = new ConversationService(deps)
+    const sender = {} as WhatsAppSender
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await expect(svc.processInboundEvents([{ kind: 'message', message: msg({ providerMessageId: 'm-x' }) }], sender)).resolves.toBeUndefined()
+    errSpy.mockRestore()
+
+    expect(deps.messages.create).toHaveBeenCalled()
+    expect(deps.conversations.touchLastMessage).toHaveBeenCalled()
+    expect(deps.flowEngine!.handleInbound).toHaveBeenCalledWith(sender, expect.objectContaining({ conversationId: 'conv1' }))
   })
 })

@@ -67,7 +67,7 @@ export class WhatsAppController {
         conversationId,
         toWaId,
         text,
-        actorUserId: request.user!.sub,
+        actorUserId: request.user?.sub,
       })
       return reply.status(201).send(result)
     } catch (err) {
