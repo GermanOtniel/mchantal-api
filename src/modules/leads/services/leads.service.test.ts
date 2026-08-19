@@ -639,7 +639,7 @@ describe('LeadsService.getLead', () => {
 
   it('needsReply true: inbound con lastMessageAt > needsReplyClearedAt', async () => {
     const convRepo = mkConvRepo({
-      findOpenByLeadId: vi.fn(async () => convData({
+      findOpenByContactId: vi.fn(async () => convData({
         lastMessageDirection: 'inbound',
         lastMessageAt: new Date('2026-02-01'),
         needsReplyClearedAt: new Date('2026-01-01'),
@@ -647,12 +647,13 @@ describe('LeadsService.getLead', () => {
     })
     const svc = mkSvc({ convRepo })
     const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(convRepo.findOpenByContactId).toHaveBeenCalledWith('ct')
     expect(res.needsReply).toBe(true)
   })
 
   it('needsReply false: direction outbound', async () => {
     const convRepo = mkConvRepo({
-      findOpenByLeadId: vi.fn(async () => convData({
+      findOpenByContactId: vi.fn(async () => convData({
         lastMessageDirection: 'outbound',
         lastMessageAt: new Date('2026-02-01'),
         needsReplyClearedAt: null,
@@ -663,10 +664,11 @@ describe('LeadsService.getLead', () => {
     expect(res.needsReply).toBe(false)
   })
 
-  it('needsReply false: no hay conversación', async () => {
-    const convRepo = mkConvRepo({ findOpenByLeadId: vi.fn(async () => null) })
+  it('needsReply false: no hay conversación (contacto sin conversación abierta)', async () => {
+    const convRepo = mkConvRepo({ findOpenByContactId: vi.fn(async () => null) })
     const svc = mkSvc({ convRepo })
     const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(convRepo.findOpenByContactId).toHaveBeenCalledWith('ct')
     expect(res.needsReply).toBe(false)
     expect(res.conversationId).toBeNull()
   })
@@ -686,7 +688,7 @@ describe('LeadsService.getLead', () => {
   })
 
   it('retorna folio, campaignName, status, enrolledAt iso, conversationId, contact', async () => {
-    const convRepo = mkConvRepo({ findOpenByLeadId: vi.fn(async () => convData({ id: 'conv-9' })) })
+    const convRepo = mkConvRepo({ findOpenByContactId: vi.fn(async () => convData({ id: 'conv-9' })) })
     const flowStates = mkFlowStateRepo({ findByCampaignLeadId: vi.fn(async () => flowStateData({ status: 'paused' })) })
     const svc = mkSvc({ convRepo, flowStates })
     const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })

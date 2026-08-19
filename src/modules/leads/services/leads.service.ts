@@ -187,7 +187,7 @@ export class LeadsService {
     }
 
     const contact = lead.contactId ? await this.contacts.findById(lead.contactId) : null
-    const conversation = await this.conversations.findOpenByLeadId(leadId)
+    const conversation = await this.conversations.findOpenByContactId(lead.contactId)
     const flowState = await this.flowStates.findByCampaignLeadId(leadId)
 
     // Q&A en orden de conversación: recorre el flujo desde el nodo inicial siguiendo las respuestas.
