@@ -84,6 +84,7 @@ function makeDeps(over: Partial<FlowEngineDeps> = {}): FlowEngineDeps {
         campaignId: d.campaignId,
         campaign: { id: d.campaignId, flowDefinition: demoFlow() },
         context: d.context,
+        origin: d.origin ?? 'unknown',
       })),
       findById: vi.fn(async () => null),
       save: vi.fn(async (l) => l),
@@ -116,6 +117,7 @@ describe('FlowEngine — inscripción', () => {
       campaign: { id: 'camp1', flowDefinition: flow },
       status: 'pending',
       campaignLeadId: null,
+      origin: 'unknown',
     }
     const deps = makeDeps({
       captures: { findPendingByFolio: vi.fn(async () => capture), markMatched: vi.fn(async () => {}) },
@@ -151,6 +153,30 @@ describe('FlowEngine — inscripción', () => {
     expect(deps.campaignLeads.create).not.toHaveBeenCalled()
     expect(sender.sendInteractiveButtons).not.toHaveBeenCalled()
     expect(sent).toHaveLength(0)
+  })
+
+  it('propaga el origen del capture al campaign lead al enrolar', async () => {
+    const flow = demoFlow()
+    const capture: LeadCaptureData = {
+      id: 'cap1',
+      folio: FOLIO,
+      campaignId: 'camp1',
+      campaign: { id: 'camp1', flowDefinition: flow },
+      status: 'pending',
+      campaignLeadId: null,
+      origin: 'Facebook',
+    }
+    const deps = makeDeps({
+      captures: { findPendingByFolio: vi.fn(async () => capture), markMatched: vi.fn(async () => {}) },
+    })
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: `Hola, mi folio es ${FOLIO}` }) }))
+
+    expect(deps.campaignLeads.create).toHaveBeenCalledWith(
+      expect.objectContaining({ contactId: 'ct1', campaignId: 'camp1', origin: 'Facebook' })
+    )
   })
 })
 
