@@ -98,6 +98,18 @@ export class ConversationService {
 
     const type = message.type === 'interactive' ? 'interactive' : message.type
 
+    // Compute priorInbound BEFORE messages.create so the just-inserted message
+    // doesn't get counted (otherwise priorInbound >= 1 and first_inbound never
+    // fires). Best-effort: a count error defaults to 1 (not-first) so a count
+    // hiccup doesn't falsely fire first_inbound.
+    let priorInbound = 1
+    try {
+      priorInbound = await this.deps.messages.countInboundByConversation(conversation.id)
+    } catch {
+      // best-effort: assume not-first
+    }
+    const isFirstInbound = priorInbound === 0
+
     const savedMessage = await this.deps.messages.create({
       conversationId: conversation.id,
       direction: 'inbound',
@@ -116,11 +128,9 @@ export class ConversationService {
     await this.deps.conversations.touchLastMessage(conversation.id, message.timestamp, 'inbound')
 
     // best-effort side-effects: milestones + realtime. A DB hiccup on
-    // countInboundByConversation or leadEvents.record must NOT break inbound
-    // processing (the inbound dedup already protects against duplicates).
+    // leadEvents.record must NOT break inbound processing (the inbound dedup
+    // already protects against duplicates).
     try {
-      const priorInbound = await this.deps.messages.countInboundByConversation(conversation.id)
-      const isFirstInbound = priorInbound === 0
       const isReEngagement =
         conversation.needsReplyClearedAt != null &&
         conversation.lastMessageAt != null &&

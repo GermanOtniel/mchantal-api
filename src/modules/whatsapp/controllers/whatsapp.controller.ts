@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { HttpError } from '../../auth/http-error'
 import type { WhatsAppProvider } from '../../../shared/whatsapp/whatsapp-provider.interface'
 import type { ConversationService } from '../services/conversation.service'
+import { encodeMessageCursor } from '../repositories/whatsapp-message.repository'
 
 export class WhatsAppController {
   constructor(
@@ -28,8 +29,9 @@ export class WhatsAppController {
         limit,
         request.query.cursor
       )
+      const last = items[items.length - 1]
       const nextCursor =
-        items.length === limit ? items[items.length - 1]?.id ?? null : null
+        items.length === limit && last ? encodeMessageCursor(last.sentAt, last.id) : null
       return reply.send({ items, nextCursor })
     } catch (err) {
       if (err instanceof HttpError) {

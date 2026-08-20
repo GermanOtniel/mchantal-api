@@ -689,4 +689,38 @@ describe('ConversationService.processInboundMessage — first_inbound + re_engag
     expect(deps.conversations.touchLastMessage).toHaveBeenCalled()
     expect(deps.flowEngine!.handleInbound).toHaveBeenCalledWith(sender, expect.objectContaining({ conversationId: 'conv1' }))
   })
+
+  it('ordena: countInboundByConversation se llama ANTES que messages.create (first_inbound no se falsea por el mensaje recién insertado)', async () => {
+    const callOrder: string[] = []
+    const deps = makeDeps({
+      conversations: {
+        findById: vi.fn(async () => null),
+        setLead: vi.fn(async () => {}),
+        findOpenByContactId: vi.fn(async () => inboundConv()),
+        createOpen: vi.fn(async () => inboundConv()),
+        touchLastMessage: vi.fn(async () => {}),
+        clearNeedsReplyByLeadId: vi.fn(async () => true),
+      } as WhatsAppConversationRepositoryWidePort,
+      messages: {
+        create: vi.fn(async () => {
+          callOrder.push('create')
+          return { id: 'in-m', conversationId: 'conv1', direction: 'inbound', providerMessageId: 'in-x', type: 'text', bodyText: 'hola', status: 'delivered', metadata: {}, sentAt: new Date('2026-01-01T00:00:00Z') } as MessageData
+        }),
+        findByProviderMessageId: vi.fn(async () => null),
+        updateStatus: vi.fn(async () => {}),
+        updateStatusAndMetadata: vi.fn(async () => {}),
+        listByConversation: vi.fn(async () => []),
+        countInboundByConversation: vi.fn(async () => {
+          callOrder.push('countInbound')
+          return 0
+        }),
+      } as unknown as WhatsAppMessageRepositoryWidePort,
+      leadEvents: { record: vi.fn(async (d) => d) } as unknown as LeadEventsRepositoryPort,
+    })
+    const svc = new ConversationService(deps)
+    await svc.processInboundEvents([{ kind: 'message', message: msg({ providerMessageId: 'm-x' }) }], {} as WhatsAppSender)
+
+    expect(callOrder.indexOf('countInbound')).toBeLessThan(callOrder.indexOf('create'))
+    expect(deps.leadEvents.record).toHaveBeenCalledWith(expect.objectContaining({ milestoneKind: 'first_inbound' }))
+  })
 })

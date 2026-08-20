@@ -847,8 +847,9 @@ describe('LeadsService.reassign', () => {
 
   it('reasigna a ejecutivo → save con nuevo assignee + assignedAt, record reassignment', async () => {
     const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ assignedExecutiveId: 'u2' })) })
+    const execRepo = mkExecRepo({ findById: vi.fn(async () => ({ id: 'u3', fullName: 'Ana', email: 'a@x', isActive: true, coverage: {}, lastAssignedAt: null } as ExecutiveData)) })
     const leadEvents = mkLeadEventsRepo()
-    const svc = mkSvc({ leadsRepo, leadEvents })
+    const svc = mkSvc({ leadsRepo, execRepo, leadEvents })
     await svc.reassign({ permissions: perms(PERMISSIONS.LEADS_REASSIGN, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', assigneeUserId: 'u3', reason: 'cambio de ejecutivo' })
     expect(leadsRepo.save).toHaveBeenCalledWith(expect.objectContaining({ assignedExecutiveId: 'u3', assignedAt: expect.any(Date) }))
     expect(leadEvents.record).toHaveBeenCalledWith(expect.objectContaining({
@@ -858,11 +859,44 @@ describe('LeadsService.reassign', () => {
 
   it('reasigna a null (unassign) → toValue null, assignedAt null', async () => {
     const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ assignedExecutiveId: 'u2' })) })
+    const execRepo = mkExecRepo({ findById: vi.fn(async () => null) })
     const leadEvents = mkLeadEventsRepo()
-    const svc = mkSvc({ leadsRepo, leadEvents })
+    const svc = mkSvc({ leadsRepo, execRepo, leadEvents })
     await svc.reassign({ permissions: perms(PERMISSIONS.LEADS_REASSIGN, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', assigneeUserId: null, reason: 'liberar' })
     expect(leadsRepo.save).toHaveBeenCalledWith(expect.objectContaining({ assignedExecutiveId: null, assignedAt: null }))
     expect(leadEvents.record).toHaveBeenCalledWith(expect.objectContaining({ fromValue: 'u2', toValue: null }))
+    // null/unassign path: no validation, execRepo.findById NOT called
+    expect(execRepo.findById).not.toHaveBeenCalled()
+  })
+
+  it('reasigna a un ejecutivo inexistente → 400 INVALID_ASSIGNEE', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ assignedExecutiveId: 'u2' })) })
+    const execRepo = mkExecRepo({ findById: vi.fn(async () => null) })
+    const leadEvents = mkLeadEventsRepo()
+    const svc = mkSvc({ leadsRepo, execRepo, leadEvents })
+    await expect(svc.reassign({ permissions: perms(PERMISSIONS.LEADS_REASSIGN, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', assigneeUserId: 'bogus', reason: 'r' })).rejects.toMatchObject({ statusCode: 400, code: 'INVALID_ASSIGNEE' })
+    expect(leadsRepo.save).not.toHaveBeenCalled()
+    expect(leadEvents.record).not.toHaveBeenCalled()
+  })
+
+  it('reasigna a un ejecutivo inactivo → 400 INVALID_ASSIGNEE', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ assignedExecutiveId: 'u2' })) })
+    const execRepo = mkExecRepo({ findById: vi.fn(async () => ({ id: 'u3', fullName: 'Ana', email: 'a@x', isActive: false, coverage: {}, lastAssignedAt: null } as ExecutiveData)) })
+    const leadEvents = mkLeadEventsRepo()
+    const svc = mkSvc({ leadsRepo, execRepo, leadEvents })
+    await expect(svc.reassign({ permissions: perms(PERMISSIONS.LEADS_REASSIGN, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', assigneeUserId: 'u3', reason: 'r' })).rejects.toMatchObject({ statusCode: 400, code: 'INVALID_ASSIGNEE' })
+    expect(leadsRepo.save).not.toHaveBeenCalled()
+    expect(leadEvents.record).not.toHaveBeenCalled()
+  })
+
+  it('reasigna a un ejecutivo activo válido → save + record', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ assignedExecutiveId: 'u2' })) })
+    const execRepo = mkExecRepo({ findById: vi.fn(async () => ({ id: 'u3', fullName: 'Ana', email: 'a@x', isActive: true, coverage: {}, lastAssignedAt: null } as ExecutiveData)) })
+    const leadEvents = mkLeadEventsRepo()
+    const svc = mkSvc({ leadsRepo, execRepo, leadEvents })
+    await svc.reassign({ permissions: perms(PERMISSIONS.LEADS_REASSIGN, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', assigneeUserId: 'u3', reason: 'ok' })
+    expect(leadsRepo.save).toHaveBeenCalledWith(expect.objectContaining({ assignedExecutiveId: 'u3' }))
+    expect(leadEvents.record).toHaveBeenCalledWith(expect.objectContaining({ toValue: 'u3' }))
   })
 })
 

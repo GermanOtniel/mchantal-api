@@ -94,7 +94,7 @@ describe('WhatsAppController.listMessages', () => {
     expect(sent[0].body).toEqual({ items, nextCursor: null })
   })
 
-  it('scope ok, N === limit → 200 con nextCursor = last.id', async () => {
+  it('scope ok, N === limit → 200 con nextCursor = encodeMessageCursor(last.sentAt, last.id)', async () => {
     const items = Array.from({ length: 2 }, (_, i) => ({
       id: `m${i}`,
       conversationId: 'conv1',
@@ -112,8 +112,9 @@ describe('WhatsAppController.listMessages', () => {
 
     await controller.listMessages(request as never, reply as never)
 
-    // nextCursor = último item id (m1 en este array de 2)
-    expect(sent[0].body).toEqual({ items, nextCursor: 'm1' })
+    // nextCursor = encodeMessageCursor(último item sentAt, id)
+    const last = items[items.length - 1]
+    expect(sent[0].body).toEqual({ items, nextCursor: `${last.sentAt}|${last.id}` })
   })
 
   it('assertConversationInScope lanza HttpError 404 → reply 404 {error, code}', async () => {

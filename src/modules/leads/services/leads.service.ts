@@ -337,6 +337,12 @@ export class LeadsService {
     if (!reason.trim()) {
       throw new HttpError('Reason required', 400, 'REASON_REQUIRED')
     }
+    if (assigneeUserId != null) {
+      const exec = await this.executives.findById(assigneeUserId)
+      if (!exec || !exec.isActive) {
+        throw new HttpError('Invalid assignee', 400, 'INVALID_ASSIGNEE')
+      }
+    }
     const prev = lead.assignedExecutiveId ?? null
     lead.assignedExecutiveId = assigneeUserId
     lead.assignedAt = assigneeUserId ? new Date() : null
