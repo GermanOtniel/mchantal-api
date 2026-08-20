@@ -17,6 +17,7 @@ function toData(c: LeadCapture): LeadCaptureData {
     },
     status: c.status,
     campaignLeadId: c.campaignLeadId,
+    origin: c.origin,
   }
 }
 
@@ -37,7 +38,7 @@ export class LeadCaptureRepository implements LeadCaptureRepositoryPort {
     await this.repo.update({ id: captureId }, { status: 'matched', campaignLeadId: leadId })
   }
 
-  async create(data: { folio: string; campaignId: string; status: 'pending' }): Promise<LeadCapture> {
-    return this.repo.save(this.repo.create({ folio: data.folio, campaignId: data.campaignId, status: data.status }))
+  async create(data: { folio: string; campaignId: string; status: 'pending'; origin: string }): Promise<LeadCapture> {
+    return this.repo.save(this.repo.create({ folio: data.folio, campaignId: data.campaignId, status: data.status, origin: data.origin }))
   }
 }

@@ -19,7 +19,10 @@ export class LeadCapturesController {
     reply: FastifyReply
   ) => {
     try {
-      const result = await this.leadCaptureService.createCapture(request.body.slug)
+      const result = await this.leadCaptureService.createCapture(
+        request.body.slug,
+        request.body.origin
+      )
       return reply.send(result)
     } catch (e) {
       return handleError(reply, e)
