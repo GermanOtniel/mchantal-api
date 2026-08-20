@@ -8,6 +8,7 @@ export class RealtimeController {
     const origin = request.headers.origin
     getSseConnectionManager().addClient(
       userId,
+      request.permissions ?? new Set<string>(),
       reply.raw,
       typeof origin === 'string' ? origin : undefined,
     )

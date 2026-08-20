@@ -4,8 +4,15 @@ import type { WhatsAppRealtimeEvent } from './types'
 
 const HEARTBEAT_MS = 30_000
 
+export type ScopeResolver = (
+  userId: string,
+  permissions: Set<string>,
+  conversationId: string,
+) => Promise<boolean>
+
 type SseClient = {
   userId: string
+  permissions: Set<string>
   response: ServerResponse
   heartbeat: ReturnType<typeof setInterval>
 }
@@ -14,20 +21,24 @@ function formatSseEvent(event: WhatsAppRealtimeEvent): string {
   return `event: ${event.type}\ndata: ${JSON.stringify(event.payload)}\n\n`
 }
 
+function extractConversationId(event: WhatsAppRealtimeEvent): string | null {
+  return event.payload.conversationId ?? null
+}
+
 export class SseConnectionManager {
   private readonly clients = new Set<SseClient>()
   private unsubscribeBus: (() => void) | null = null
 
-  constructor(private readonly bus: RealtimeBus) {}
+  constructor(private readonly bus: RealtimeBus, private readonly scopeResolver: ScopeResolver) {}
 
   start(): void {
     if (this.unsubscribeBus) return
     this.unsubscribeBus = this.bus.subscribe((event) => {
-      this.broadcast(event)
+      void this.broadcast(event)
     })
   }
 
-  addClient(userId: string, response: ServerResponse, origin?: string): void {
+  addClient(userId: string, permissions: Set<string>, response: ServerResponse, origin?: string): void {
     const corsHeaders: Record<string, string> = origin
       ? {
           'Access-Control-Allow-Origin': origin,
@@ -50,7 +61,7 @@ export class SseConnectionManager {
       }
     }, HEARTBEAT_MS)
 
-    const client: SseClient = { userId, response, heartbeat }
+    const client: SseClient = { userId, permissions, response, heartbeat }
     this.clients.add(client)
 
     response.on('close', () => {
@@ -65,14 +76,24 @@ export class SseConnectionManager {
     this.clients.delete(client)
   }
 
-  private broadcast(event: WhatsAppRealtimeEvent): void {
-    const payload = formatSseEvent(event)
+  private async broadcast(event: WhatsAppRealtimeEvent): Promise<void> {
+    const conversationId = extractConversationId(event)
+    if (!conversationId) {
+      // no conversationId → don't broadcast (all current events have one; safe default)
+      return
+    }
     for (const client of this.clients) {
       if (client.response.writableEnded) {
         this.removeClient(client)
         continue
       }
-      client.response.write(payload)
+      try {
+        const allowed = await this.scopeResolver(client.userId, client.permissions, conversationId)
+        if (!allowed) continue
+        client.response.write(formatSseEvent(event))
+      } catch {
+        // best-effort: skip this client on error
+      }
     }
   }
 
