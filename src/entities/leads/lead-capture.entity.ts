@@ -31,6 +31,9 @@ export class LeadCapture {
   @Column({ type: 'uuid', nullable: true, name: 'campaign_lead_id' })
   campaignLeadId!: string | null
 
+  @Column({ type: 'varchar', length: 60, default: 'unknown' })
+  origin!: string
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date
 }
