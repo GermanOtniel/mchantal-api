@@ -1,6 +1,7 @@
 import 'reflect-metadata'
 import { DataSource } from 'typeorm'
 import * as dotenv from 'dotenv'
+import { resolveSsl } from '../config/db'
 import { User } from '../entities/auth/user.entity'
 import { RefreshToken } from '../entities/auth/refresh-token.entity'
 import { PasswordResetToken } from '../entities/auth/password-reset-token.entity'
@@ -44,4 +45,5 @@ export const AppDataSource = new DataSource({
   migrations: [AuthInitial1747129600000, CampaignsInitial1749000000000, LeadsWhatsappInitial1749100000000, MatcherDictionariesInitial1750000000000, ExecutivesAndAssignmentInitial1750100000000, MatcherDictionaryPresetsSeed1750200000000, RbacInitial1750300000000, RbacCatalogTrim1750400000000, LeadsListingScopeA1750500000000, LeadsAssignmentFilter1750600000000, LeadAttendB1750700000000, CampaignOriginsAnalytics1750800000000, AnalyticsReadPermission1750900000000],
   synchronize: false,
   logging: process.env.NODE_ENV === 'development',
+  ssl: resolveSsl(process.env.DB_SSL),
 })
