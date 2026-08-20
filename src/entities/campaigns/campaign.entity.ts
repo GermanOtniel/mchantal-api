@@ -23,6 +23,9 @@ export class Campaign {
   @Column({ type: 'jsonb', name: 'flow_definition', default: () => "'{}'" })
   flowDefinition!: Record<string, unknown>
 
+  @Column({ type: 'text', array: true, default: () => "'{}'" })
+  origins!: string[]
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date
 

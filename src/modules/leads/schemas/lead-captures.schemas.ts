@@ -3,6 +3,7 @@ import { Type } from '@sinclair/typebox'
 export const CreateLeadCaptureBodySchema = Type.Object(
   {
     slug: Type.String({ minLength: 1, maxLength: 120 }),
+    origin: Type.Optional(Type.String({ minLength: 1, maxLength: 60 })),
   },
   { additionalProperties: false }
 )

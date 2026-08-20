@@ -31,12 +31,12 @@ export const MessageItemSchema = Type.Object({
 
 export const MessagesListResponseSchema = Type.Object({
   items: Type.Array(MessageItemSchema),
-  nextCursor: Type.Union([Type.String({ format: 'uuid' }), Type.Null()]),
+  nextCursor: Type.Union([Type.String(), Type.Null()]),
 })
 
 export const ListMessagesQuerySchema = Type.Object({
   limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, default: 50 })),
-  cursor: Type.Optional(Type.String({ format: 'uuid' })),
+  cursor: Type.Optional(Type.String()),
 })
 
 export const SendMessageBodySchema = Type.Object(

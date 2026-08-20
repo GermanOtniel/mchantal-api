@@ -52,6 +52,9 @@ export class CampaignLead {
   @Column({ type: 'varchar', length: 20, default: 'new' })
   status!: string
 
+  @Column({ type: 'varchar', length: 60, default: 'unknown' })
+  origin!: string
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date
 

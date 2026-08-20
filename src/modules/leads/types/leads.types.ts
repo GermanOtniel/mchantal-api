@@ -18,6 +18,7 @@ export type LeadCaptureData = {
   campaign: { id: string; flowDefinition: FlowDefinition }
   status: 'pending' | 'matched' | 'expired'
   campaignLeadId?: string | null
+  origin: string
 }
 
 export type CampaignLeadContext = {
@@ -36,6 +37,7 @@ export type CampaignLeadData = {
   assignedAt?: Date | null
   status: string
   enrolledAt: Date
+  origin: string
 }
 
 export type LeadFlowStateData = {
@@ -74,6 +76,7 @@ export type CreateCampaignLeadData = {
   contactId: string
   campaignId: string
   context: CampaignLeadContext
+  origin?: string
 }
 
 export type CreateFlowStateData = {

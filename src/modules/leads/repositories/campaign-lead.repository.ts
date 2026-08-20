@@ -27,6 +27,7 @@ function toData(lead: CampaignLead): CampaignLeadData {
     assignedAt: lead.assignedAt,
     status: lead.status,
     enrolledAt: lead.enrolledAt,
+    origin: lead.origin,
   }
 }
 
@@ -68,6 +69,7 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
         contactId: data.contactId,
         campaignId: data.campaignId,
         context: data.context as unknown as Record<string, unknown>,
+        origin: data.origin ?? 'unknown',
       })
     )
     const reloaded = await this.repo.findOne({ where: { id: saved.id }, relations: ['campaign'] })

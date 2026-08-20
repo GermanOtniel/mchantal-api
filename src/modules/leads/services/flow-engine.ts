@@ -56,6 +56,7 @@ export class FlowEngine {
         contactId: ctx.contactId,
         campaignId: capture.campaignId,
         context: { folio: capture.folio, answers: {} },
+        origin: capture.origin,
       })
       await this.deps.leadEvents?.record({
         leadId: lead.id,
