@@ -9,6 +9,7 @@ export const CampaignResponseSchema = Type.Object({
   name: Type.String(),
   entryMessage: Type.String(),
   flowDefinition: FlowDefinitionSchema,
+  origins: Type.Array(Type.String()),
   createdAt: Type.String(),
   updatedAt: Type.String(),
 })
@@ -22,6 +23,7 @@ export const CreateCampaignBodySchema = Type.Object(
     name: Type.String({ minLength: 2, maxLength: 200 }),
     entryMessage: Type.String({ minLength: 1, maxLength: 2000 }),
     flowDefinition: Type.Optional(FlowDefinitionSchema),
+    origins: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 60 }))),
   },
   { additionalProperties: false }
 )
@@ -31,6 +33,7 @@ export const UpdateCampaignBodySchema = Type.Object(
     name: Type.Optional(Type.String({ minLength: 2, maxLength: 200 })),
     entryMessage: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
     flowDefinition: Type.Optional(FlowDefinitionSchema),
+    origins: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 60 }))),
   },
   { additionalProperties: false }
 )

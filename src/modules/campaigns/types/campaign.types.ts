@@ -6,6 +6,7 @@ export type Campaign = {
   name: string
   entryMessage: string
   flowDefinition: Record<string, unknown>
+  origins: string[]
   createdAt: Date
   updatedAt: Date
 }
@@ -15,10 +16,11 @@ export type CreateCampaignData = {
   name: string
   entryMessage: string
   flowDefinition: Record<string, unknown>
+  origins: string[]
 }
 
 export type UpdateCampaignData = Partial<
-  Pick<Campaign, 'name' | 'entryMessage' | 'flowDefinition'>
+  Pick<Campaign, 'name' | 'entryMessage' | 'flowDefinition' | 'origins'>
 >
 
 // Re-export para comodidad de quienes importan desde types.

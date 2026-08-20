@@ -26,6 +26,7 @@ function makeCampaign(over: Partial<Campaign> = {}): Campaign {
     name: 'Demo',
     entryMessage: 'Hola, mi folio es {{folio}}',
     flowDefinition: { nodes: {} },
+    origins: [],
     createdAt: new Date(),
     updatedAt: new Date(),
     ...over,
@@ -57,6 +58,7 @@ describe('CampaignService.createCampaign', () => {
       name: 'Demo Presentación',
       entryMessage: 'Hola, mi folio es {{folio}}',
       flowDefinition: validFlow(),
+      origins: [],
     })
   })
 
@@ -114,6 +116,24 @@ describe('CampaignService.createCampaign', () => {
     await svc.createCampaign({ name: 'Demo', entryMessage: 'Hola {{folio}}' })
     expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ slug: 'demo-3' }))
   })
+
+  it('normaliza origins: trim, dedupe case-insensitive, descarta vacíos', async () => {
+    const repo = makeRepo()
+    const svc = new CampaignService(repo)
+    await svc.createCampaign({
+      name: 'Demo',
+      entryMessage: 'Hola {{folio}}',
+      origins: [' Facebook ', 'facebook', '', 'Instagram'],
+    })
+    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ origins: ['Facebook', 'Instagram'] }))
+  })
+
+  it('sin origins → []', async () => {
+    const repo = makeRepo()
+    const svc = new CampaignService(repo)
+    await svc.createCampaign({ name: 'Demo', entryMessage: 'Hola {{folio}}' })
+    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ origins: [] }))
+  })
 })
 
 describe('CampaignService.updateCampaign', () => {
@@ -150,5 +170,12 @@ describe('CampaignService.updateCampaign', () => {
     const svc = new CampaignService(repo)
     await svc.updateCampaign('c1', { flowDefinition: validFlow() })
     expect(repo.update).toHaveBeenCalledWith('c1', { flowDefinition: validFlow() })
+  })
+
+  it('acepta y normaliza origins en el patch', async () => {
+    const repo = makeRepo()
+    const svc = new CampaignService(repo)
+    await svc.updateCampaign('c1', { origins: [' TikTok ', 'tiktok'] })
+    expect(repo.update).toHaveBeenCalledWith('c1', expect.objectContaining({ origins: ['TikTok'] }))
   })
 })

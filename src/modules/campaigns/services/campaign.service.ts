@@ -13,6 +13,24 @@ export type CreateCampaignInput = {
   name: string
   entryMessage: string
   flowDefinition?: Record<string, unknown>
+  origins?: string[]
+}
+
+/** Normaliza la lista de orígenes: trim, colapsa espacios internos, dedupe
+ * case-insensitive (conserva la primera capitalización), descarta vacíos. */
+function normalizeOrigins(input: string[] | undefined): string[] {
+  if (!input) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of input) {
+    const v = raw.trim().replace(/\s+/g, ' ')
+    if (!v) continue
+    const key = v.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(v)
+  }
+  return out
 }
 
 export class CampaignService {
@@ -57,6 +75,7 @@ export class CampaignService {
       name: input.name,
       entryMessage: input.entryMessage,
       flowDefinition: flow,
+      origins: normalizeOrigins(input.origins),
     })
   }
 
@@ -78,6 +97,8 @@ export class CampaignService {
         )
       }
     }
-    return this.campaigns.update(id, patch)
+    const normalized: UpdateCampaignData =
+      patch.origins !== undefined ? { ...patch, origins: normalizeOrigins(patch.origins) } : patch
+    return this.campaigns.update(id, normalized)
   }
 }
