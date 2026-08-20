@@ -3,6 +3,7 @@ import helmet from '@fastify/helmet'
 import { TypeBoxTypeProvider } from '@fastify/type-provider-typebox'
 import Fastify from 'fastify'
 import { getEnv } from './config/env'
+import { resolveCorsOrigin } from './config/cors'
 import { authPlugin } from './modules/auth/routes/auth.routes'
 import { campaignsPlugin } from './modules/campaigns/routes/campaigns.routes'
 import { analyticsPlugin } from './modules/analytics/routes/analytics.routes'
@@ -29,7 +30,7 @@ export async function buildApp() {
   }).withTypeProvider<TypeBoxTypeProvider>()
 
   await app.register(cors, {
-    origin: true,
+    origin: resolveCorsOrigin(process.env.CORS_ORIGIN),
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'HEAD', 'OPTIONS'],
   })
   await app.register(helmet)
