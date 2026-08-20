@@ -5,6 +5,7 @@ import Fastify from 'fastify'
 import { getEnv } from './config/env'
 import { authPlugin } from './modules/auth/routes/auth.routes'
 import { campaignsPlugin } from './modules/campaigns/routes/campaigns.routes'
+import { analyticsPlugin } from './modules/analytics/routes/analytics.routes'
 import { matcherDictionariesPlugin } from './modules/matcher-dictionaries/routes/matcher-dictionaries.routes'
 import { executivesPlugin } from './modules/executives/routes/executives.routes'
 import { webhookPlugin } from './modules/whatsapp/routes/webhook.routes'
@@ -34,6 +35,7 @@ export async function buildApp() {
   await app.register(helmet)
   await app.register(authPlugin, { prefix: '/v1/auth' })
   await app.register(campaignsPlugin, { prefix: '/v1/campaigns' })
+  await app.register(analyticsPlugin, { prefix: '/v1/analytics' })
   await app.register(matcherDictionariesPlugin, { prefix: '/v1/matcher-dictionaries' })
   await app.register(executivesPlugin, { prefix: '/v1/executives' })
   await app.register(leadsPlugin, { prefix: '/v1/leads' })
