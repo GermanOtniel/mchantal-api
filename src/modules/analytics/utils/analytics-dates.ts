@@ -1,4 +1,4 @@
-const BUSINESS_TZ = 'America/Mexico_City'
+export const BUSINESS_TZ = 'America/Mexico_City'
 
 export function formatDateInTz(date: Date, timeZone = BUSINESS_TZ): string {
   return new Intl.DateTimeFormat('en-CA', {
