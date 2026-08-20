@@ -30,9 +30,17 @@ export class RbacCatalogTrim1750400000000 implements MigrationInterface {
   name = 'RbacCatalogTrim1750400000000'
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // 1) Insertar el nuevo permiso (matcher_dictionaries.manage)
+    // 1) Insertar el nuevo permiso (matcher_dictionaries.manage).
+    //    ON CONFLICT DO UPDATE ... RETURNING id: devuelve el id tanto si se insertó
+    //    como si ya existía. Puede existir si RbacInitial ya lo sembró leyendo el
+    //    catálogo actual (PERMISSION_CATALOG), lo que ocurre al aplicar todas las
+    //    migraciones desde cero en una DB virgen. Así la migración es idempotente.
     const inserted = (await queryRunner.query(
-      `INSERT INTO "permissions" ("key", "module", "description") VALUES ($1, $2, $3) RETURNING id`,
+      `INSERT INTO "permissions" ("key", "module", "description") VALUES ($1, $2, $3)
+       ON CONFLICT ("key") DO UPDATE SET
+         "module" = EXCLUDED."module",
+         "description" = EXCLUDED."description"
+       RETURNING id`,
       [NEW_PERMISSION.key, NEW_PERMISSION.module, NEW_PERMISSION.description]
     )) as { id: string }[]
     const newPermissionId = inserted[0]?.id
