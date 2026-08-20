@@ -27,7 +27,7 @@ export const analyticsPlugin: FastifyPluginAsyncTypebox = async (app) => {
   app.get(
     '/overview/kpis',
     {
-      preHandler: requirePermission(PERMISSIONS.LEADS_READ_ALL),
+      preHandler: requirePermission(PERMISSIONS.ANALYTICS_READ),
       schema: { response: { 200: OverviewKpisSchema, 400: ErrorResponseSchema } },
     },
     controller.overviewKpis
@@ -36,7 +36,7 @@ export const analyticsPlugin: FastifyPluginAsyncTypebox = async (app) => {
   app.get(
     '/overview/charts',
     {
-      preHandler: requirePermission(PERMISSIONS.LEADS_READ_ALL),
+      preHandler: requirePermission(PERMISSIONS.ANALYTICS_READ),
       schema: {
         querystring: OverviewChartsQuerySchema,
         response: { 200: OverviewChartsSchema, 400: ErrorResponseSchema },
@@ -48,7 +48,7 @@ export const analyticsPlugin: FastifyPluginAsyncTypebox = async (app) => {
   app.get(
     '/overview/campaigns',
     {
-      preHandler: requirePermission(PERMISSIONS.LEADS_READ_ALL),
+      preHandler: requirePermission(PERMISSIONS.ANALYTICS_READ),
       schema: {
         querystring: CampaignsTableQuerySchema,
         response: { 200: CampaignsTableSchema, 400: ErrorResponseSchema },
@@ -60,7 +60,7 @@ export const analyticsPlugin: FastifyPluginAsyncTypebox = async (app) => {
   app.get(
     '/campaigns/:id/kpis',
     {
-      preHandler: requirePermission(PERMISSIONS.LEADS_READ_ALL),
+      preHandler: requirePermission(PERMISSIONS.ANALYTICS_READ),
       schema: {
         params: IdParamsSchema,
         response: { 200: OverviewKpisSchema, 400: ErrorResponseSchema },
@@ -72,7 +72,7 @@ export const analyticsPlugin: FastifyPluginAsyncTypebox = async (app) => {
   app.get(
     '/campaigns/:id/charts',
     {
-      preHandler: requirePermission(PERMISSIONS.LEADS_READ_ALL),
+      preHandler: requirePermission(PERMISSIONS.ANALYTICS_READ),
       schema: {
         params: IdParamsSchema,
         querystring: CampaignChartsQuerySchema,

@@ -12,6 +12,7 @@ export const PERMISSIONS = {
   LEADS_ATTEND: 'leads.attend',
   LEADS_REASSIGN: 'leads.reassign',
   LEADS_CHANGE_STATUS: 'leads.change_status',
+  ANALYTICS_READ: 'analytics.read',
 } as const
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS]
@@ -89,6 +90,11 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     key: PERMISSIONS.LEADS_CHANGE_STATUS,
     module: 'leads',
     description: 'Cambiar el estatus de atención de un lead (con razón)',
+  },
+  {
+    key: PERMISSIONS.ANALYTICS_READ,
+    module: 'analytics',
+    description: 'Ver el dashboard de analytics (métricas globales de leads por campaña y origen)',
   },
 ]
 
