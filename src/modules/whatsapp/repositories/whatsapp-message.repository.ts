@@ -20,13 +20,23 @@ function toData(m: WhatsAppMessage): MessageData {
   }
 }
 
+export function encodeMessageCursor(sentAt: string, id: string): string {
+  return `${sentAt}|${id}`
+}
+
+export function decodeMessageCursor(cursor: string): { sentAt: string; id: string } {
+  const idx = cursor.lastIndexOf('|')
+  if (idx <= 0) throw new Error('Invalid cursor')
+  return { sentAt: cursor.slice(0, idx), id: cursor.slice(idx + 1) }
+}
+
 export class WhatsAppMessageRepository implements WhatsAppMessageRepositoryWidePort {
   private get repo() {
     return AppDataSource.getRepository(WhatsAppMessage)
   }
 
-  async create(data: MessageCreateData): Promise<WhatsAppMessage> {
-    return this.repo.save(
+  async create(data: MessageCreateData): Promise<MessageData> {
+    const saved = await this.repo.save(
       this.repo.create({
         conversationId: data.conversationId,
         direction: data.direction,
@@ -38,6 +48,7 @@ export class WhatsAppMessageRepository implements WhatsAppMessageRepositoryWideP
         metadata: data.metadata,
       })
     )
+    return toData(saved)
   }
 
   async findByProviderMessageId(providerMessageId: string): Promise<MessageData | null> {
@@ -59,5 +70,28 @@ export class WhatsAppMessageRepository implements WhatsAppMessageRepositoryWideP
     entity.status = status
     entity.metadata = metadata
     await this.repo.save(entity)
+  }
+
+  async listByConversation(
+    conversationId: string,
+    limit: number,
+    cursor?: string
+  ): Promise<MessageData[]> {
+    const qb = this.repo
+      .createQueryBuilder('m')
+      .where('m.conversationId = :conversationId', { conversationId })
+      .orderBy('m.sentAt', 'DESC')
+      .addOrderBy('m.id', 'DESC')
+      .take(limit)
+    if (cursor) {
+      const { sentAt, id } = decodeMessageCursor(cursor)
+      qb.andWhere('(m.sentAt < :cs OR (m.sentAt = :cs AND m.id < :cid))', { cs: sentAt, cid: id })
+    }
+    const rows = await qb.getMany()
+    return rows.map(toData)
+  }
+
+  async countInboundByConversation(conversationId: string): Promise<number> {
+    return this.repo.count({ where: { conversationId, direction: 'inbound' } })
   }
 }

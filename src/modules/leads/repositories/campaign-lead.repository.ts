@@ -18,12 +18,15 @@ function toData(lead: CampaignLead): CampaignLeadData {
     campaignId: lead.campaignId,
     campaign: {
       id: lead.campaign.id,
+      name: lead.campaign.name,
       flowDefinition: lead.campaign.flowDefinition as unknown as FlowDefinition,
     },
     context: lead.context as unknown as CampaignLeadContext,
     assignmentMode: lead.assignmentMode,
     assignedExecutiveId: lead.assignedExecutiveId,
     assignedAt: lead.assignedAt,
+    status: lead.status,
+    enrolledAt: lead.enrolledAt,
   }
 }
 
@@ -84,6 +87,7 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
     entity.assignmentMode = lead.assignmentMode ?? null
     entity.assignedExecutiveId = lead.assignedExecutiveId ?? null
     entity.assignedAt = lead.assignedAt ?? null
+    entity.status = lead.status
     await this.repo.save(entity)
     return lead
   }
@@ -173,5 +177,16 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
     const total = await countQb.getCount()
 
     return { items, total }
+  }
+
+  async existsByContactIdAndAssignee(
+    contactId: string,
+    assigneeUserId: string
+  ): Promise<boolean> {
+    const found = await this.repo.findOne({
+      where: { contactId, assignedExecutiveId: assigneeUserId },
+      select: ['id'],
+    })
+    return Boolean(found)
   }
 }

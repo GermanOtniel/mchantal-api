@@ -1,0 +1,89 @@
+import type { FastifyReply, FastifyRequest } from 'fastify'
+import { HttpError } from '../../auth/http-error'
+import type { WhatsAppProvider } from '../../../shared/whatsapp/whatsapp-provider.interface'
+import type { ConversationService } from '../services/conversation.service'
+import { encodeMessageCursor } from '../repositories/whatsapp-message.repository'
+
+export class WhatsAppController {
+  constructor(
+    private readonly conversations: ConversationService,
+    private readonly provider: WhatsAppProvider
+  ) {}
+
+  listMessages = async (
+    request: FastifyRequest<{
+      Params: { id: string }
+      Querystring: { limit?: number; cursor?: string }
+    }>,
+    reply: FastifyReply
+  ) => {
+    try {
+      const limit = request.query.limit ?? 50
+      await this.conversations.assertConversationInScope(
+        request.params.id,
+        request.permissions ?? new Set<string>(),
+        request.user!.sub
+      )
+      const items = await this.conversations.listMessages(
+        request.params.id,
+        limit,
+        request.query.cursor
+      )
+      const last = items[items.length - 1]
+      const nextCursor =
+        items.length === limit && last ? encodeMessageCursor(last.sentAt, last.id) : null
+      return reply.send({ items, nextCursor })
+    } catch (err) {
+      if (err instanceof HttpError) {
+        return reply.status(err.statusCode).send({
+          error: err.message,
+          code: err.code,
+        })
+      }
+      throw err
+    }
+  }
+
+  sendMessage = async (
+    request: FastifyRequest<{
+      Body: { conversationId?: string; toWaId?: string; text: string }
+    }>,
+    reply: FastifyReply
+  ) => {
+    const { conversationId, toWaId, text } = request.body
+
+    if (!conversationId) {
+      return reply.status(400).send({
+        error: 'conversationId is required',
+        code: 'INVALID_RECIPIENT',
+      })
+    }
+
+    try {
+      await this.conversations.assertConversationInScope(
+        conversationId,
+        request.permissions ?? new Set<string>(),
+        request.user!.sub
+      )
+      const result = await this.conversations.sendTextMessage(this.provider, {
+        conversationId,
+        toWaId,
+        text,
+        actorUserId: request.user?.sub,
+      })
+      return reply.status(201).send(result)
+    } catch (err) {
+      if (err instanceof HttpError) {
+        return reply.status(err.statusCode).send({
+          error: err.message,
+          code: err.code,
+        })
+      }
+      request.log.error(err)
+      return reply.status(502).send({
+        error: 'Failed to send WhatsApp message',
+        code: 'WHATSAPP_SEND_FAILED',
+      })
+    }
+  }
+}

@@ -7,6 +7,12 @@ export class WhatsAppContactRepository implements WhatsAppContactRepositoryPort 
     return AppDataSource.getRepository(WhatsAppContact)
   }
 
+  async findById(contactId: string): Promise<ContactData | null> {
+    const contact = await this.repo.findOne({ where: { id: contactId } })
+    if (!contact) return null
+    return { id: contact.id, waId: contact.waId, profileName: contact.profileName }
+  }
+
   async upsert(waId: string, profileName?: string | null): Promise<ContactData> {
     let contact = await this.repo.findOne({ where: { waId } })
     if (contact) {

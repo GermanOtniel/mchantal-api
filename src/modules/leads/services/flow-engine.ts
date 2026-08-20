@@ -15,6 +15,7 @@ import type {
 } from '../types/leads.types'
 import { FOLIO_REGEX } from './folio.service'
 import { classify } from '../../matcher-dictionaries/services/classifier'
+import type { MessageRealtimePayload } from '../../whatsapp/realtime/types'
 
 export class FlowEngine {
   constructor(private readonly deps: FlowEngineDeps) {}
@@ -55,6 +56,15 @@ export class FlowEngine {
         contactId: ctx.contactId,
         campaignId: capture.campaignId,
         context: { folio: capture.folio, answers: {} },
+      })
+      await this.deps.leadEvents?.record({
+        leadId: lead.id,
+        type: 'enrolled',
+        fromValue: null,
+        toValue: null,
+        reason: null,
+        milestoneKind: null,
+        actorUserId: null,
       })
     }
 
@@ -285,17 +295,57 @@ export class FlowEngine {
       metadata: Record<string, unknown>
     }
   ): Promise<void> {
-    await this.deps.messages.create({
+    const sentAt = new Date()
+    const saved = await this.deps.messages.create({
       conversationId: ctx.conversationId,
       direction: 'outbound',
       providerMessageId: data.providerMessageId,
       type: data.type,
       bodyText: data.bodyText,
       status: 'pending',
-      sentAt: new Date(),
+      sentAt,
       metadata: data.metadata,
     })
-    await this.deps.conversations.touchLastMessage(ctx.conversationId, new Date(), 'outbound')
+    await this.deps.conversations.touchLastMessage(ctx.conversationId, sentAt, 'outbound')
+
+    const conversation = await this.deps.conversations.findById(ctx.conversationId)
+    const leadId = conversation?.leadId ?? null
+    if (leadId) {
+      await this.deps.leadEvents?.record({
+        leadId,
+        type: 'message_milestone',
+        fromValue: null,
+        toValue: null,
+        reason: null,
+        milestoneKind: 'last_outbound',
+        actorUserId: null,
+      })
+    }
+    this.deps.realtimeBus?.publish({
+      type: 'message.created',
+      payload: {
+        conversationId: ctx.conversationId,
+        message: {
+          id: saved.id,
+          conversationId: saved.conversationId,
+          direction: saved.direction,
+          providerMessageId: saved.providerMessageId,
+          type: saved.type,
+          bodyText: saved.bodyText,
+          status: saved.status as MessageRealtimePayload['status'],
+          sentAt: saved.sentAt.toISOString(),
+        },
+      },
+    })
+    this.deps.realtimeBus?.publish({
+      type: 'conversation.updated',
+      payload: {
+        conversationId: ctx.conversationId,
+        lastMessageAt: sentAt.toISOString(),
+        lastMessageDirection: 'outbound',
+        needsReply: false,
+      },
+    })
   }
 }
 

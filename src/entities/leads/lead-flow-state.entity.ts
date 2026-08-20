@@ -9,7 +9,7 @@ import {
 } from 'typeorm'
 import { CampaignLead } from './campaign-lead.entity'
 
-export type LeadFlowStateStatus = 'active' | 'completed'
+export type LeadFlowStateStatus = 'active' | 'paused' | 'completed'
 
 @Entity({ name: 'lead_flow_states' })
 export class LeadFlowState {

@@ -5,6 +5,7 @@ import type {
   ExecutiveData,
   ExecutiveRepositoryPort,
   UpdateExecutiveData,
+  AvailableExecutive,
 } from '../types/executives.types'
 
 function toData(u: User): ExecutiveData {
@@ -60,5 +61,23 @@ export class ExecutiveRepository implements ExecutiveRepositoryPort {
 
   async touchLastAssignedAt(id: string): Promise<void> {
     await this.repo.update(id, { lastAssignedAt: new Date() })
+  }
+
+  // v1: campaignId accepted but not used to filter coverage yet (later refinement).
+  // Returns ALL active executives with their activeLeads count (leads with
+  // non-terminal status: not 'qualified'/'disqualified').
+  async listAvailableForCampaign(_campaignId: string): Promise<AvailableExecutive[]> {
+    const rows = await this.repo
+      .createQueryBuilder('u')
+      .select('u.id', 'userId')
+      .addSelect('u.full_name', 'fullName')
+      .addSelect(
+        `(SELECT COUNT(*) FROM campaign_leads cl WHERE cl.assigned_executive_id = u.id AND cl.status NOT IN ('qualified','disqualified'))`,
+        'activeLeads',
+      )
+      .where('u.is_executive = true')
+      .orderBy('u.full_name', 'ASC')
+      .getRawMany<{ userId: string; fullName: string; activeLeads: string }>()
+    return rows.map((r) => ({ userId: r.userId, fullName: r.fullName, activeLeads: Number(r.activeLeads) }))
   }
 }

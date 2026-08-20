@@ -6,7 +6,16 @@ import type {
 } from '../../leads/types/leads.types'
 
 function toData(c: WhatsAppConversation): ConversationData {
-  return { id: c.id, contactId: c.contactId, status: c.status, leadId: c.leadId }
+  return {
+    id: c.id,
+    contactId: c.contactId,
+    contactWaId: '',
+    status: c.status,
+    leadId: c.leadId,
+    lastMessageAt: c.lastMessageAt,
+    lastMessageDirection: c.lastMessageDirection,
+    needsReplyClearedAt: c.needsReplyClearedAt,
+  }
 }
 
 export class WhatsAppConversationRepository
@@ -17,8 +26,21 @@ export class WhatsAppConversationRepository
   }
 
   async findById(id: string): Promise<ConversationData | null> {
-    const c = await this.repo.findOne({ where: { id } })
-    return c ? toData(c) : null
+    const c = await this.repo.findOne({
+      where: { id },
+      relations: ['contact'],
+    })
+    if (!c) return null
+    return {
+      id: c.id,
+      contactId: c.contactId,
+      contactWaId: c.contact?.waId ?? '',
+      status: c.status,
+      leadId: c.leadId,
+      lastMessageAt: c.lastMessageAt,
+      lastMessageDirection: c.lastMessageDirection,
+      needsReplyClearedAt: c.needsReplyClearedAt,
+    }
   }
 
   async setLead(conversationId: string, leadId: string): Promise<void> {
@@ -33,6 +55,25 @@ export class WhatsAppConversationRepository
     return c ? toData(c) : null
   }
 
+  async findOpenByLeadId(leadId: string): Promise<ConversationData | null> {
+    const c = await this.repo.findOne({
+      where: { leadId, status: 'open' },
+      order: { createdAt: 'DESC' },
+      relations: ['contact'],
+    })
+    if (!c) return null
+    return {
+      id: c.id,
+      contactId: c.contactId,
+      contactWaId: c.contact?.waId ?? '',
+      status: c.status,
+      leadId: c.leadId,
+      lastMessageAt: c.lastMessageAt,
+      lastMessageDirection: c.lastMessageDirection,
+      needsReplyClearedAt: c.needsReplyClearedAt,
+    }
+  }
+
   async createOpen(contactId: string): Promise<ConversationData> {
     const c = await this.repo.save(this.repo.create({ contactId, status: 'open' }))
     return toData(c)
@@ -45,6 +86,14 @@ export class WhatsAppConversationRepository
   async clearNeedsReplyByLeadId(leadId: string): Promise<boolean> {
     const res = await this.repo.update(
       { leadId, status: 'open' },
+      { needsReplyClearedAt: new Date() }
+    )
+    return (res.affected ?? 0) > 0
+  }
+
+  async clearNeedsReplyByContactId(contactId: string): Promise<boolean> {
+    const res = await this.repo.update(
+      { contactId, status: 'open' },
       { needsReplyClearedAt: new Date() }
     )
     return (res.affected ?? 0) > 0
