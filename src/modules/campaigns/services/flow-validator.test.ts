@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   validateFlowDefinition,
   validateEntryMessage,
+  flowWarnings,
   type FlowDefinition,
   type ValidationIssue,
 } from './flow-validator'
@@ -474,5 +475,39 @@ describe('validateFlowDefinition — avisos de asignación (warnings)', () => {
     }
     const warns = validateFlowDefinition(flow).filter(i => i.severity === 'warning')
     expect(warns.some(w => w.code === 'BRANCH_WITHOUT_ASSIGNMENT' && w.field.includes('ask_estado'))).toBe(false)
+  })
+})
+
+describe('flowWarnings', () => {
+  it('devuelve sólo los issues con severity warning (BRANCH_WITHOUT_ASSIGNMENT)', () => {
+    const flow = validFlow() // welcome -> closing sin asignación → warning
+    const warns = flowWarnings(flow)
+    expect(warns.length).toBeGreaterThan(0)
+    expect(warns.some((w) => w.code === 'BRANCH_WITHOUT_ASSIGNMENT')).toBe(true)
+    expect(warns.every((w) => w.severity === 'warning')).toBe(true)
+  })
+
+  it('devuelve [] cuando todas las ramas tienen asignación', () => {
+    const flow = validFlow()
+    ;(flow.nodes.closing as { assignment?: unknown }).assignment = { mode: 'manual' }
+    expect(flowWarnings(flow)).toEqual([])
+  })
+
+  it('no incluye errores (sólo warnings)', () => {
+    const invalidFlow: FlowDefinition = {
+      nodes: {
+        welcome: {
+          id: 'welcome',
+          type: 'interactive_buttons',
+          body: '¿?',
+          buttons: [{ id: 'x', title: 'X' }],
+          transitions: { x: 'no_existe' },
+          onFreeText: 'reprompt',
+        },
+      },
+    }
+    const warns = flowWarnings(invalidFlow)
+    expect(warns.every((w) => w.severity === 'warning')).toBe(true)
+    expect(warns.some((w) => w.code === 'NODE_REF_NOT_FOUND')).toBe(false)
   })
 })

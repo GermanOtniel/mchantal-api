@@ -369,6 +369,11 @@ function detectAssignmentWarnings(
   dfs(entryId, false)
 }
 
+/** Issues de validación no bloqueantes (severity 'warning') para un flowDefinition. */
+export function flowWarnings(flow: unknown): ValidationIssue[] {
+  return validateFlowDefinition(flow).filter((i) => i.severity === 'warning')
+}
+
 /** Valida el mensaje de entrada (el que el lead envía). Debe contener {{folio}}. */
 export function validateEntryMessage(entryMessage: unknown): ValidationIssue[] {
   const issues: ValidationIssue[] = []

@@ -7,6 +7,8 @@ import {
   CreateCampaignBodySchema,
   UpdateCampaignBodySchema,
 } from '../schemas/campaigns.schemas'
+import { flowWarnings } from '../services/flow-validator'
+import type { ValidationIssue } from '../types/flow.types'
 
 function toResponse(c: Campaign) {
   return {
@@ -46,7 +48,10 @@ export class CampaignsController {
   ) => {
     try {
       const c = await this.campaignService.createCampaign(request.body)
-      return reply.code(201).send(toResponse(c))
+      const warnings: ValidationIssue[] = request.body.flowDefinition
+        ? flowWarnings(request.body.flowDefinition)
+        : []
+      return reply.code(201).send({ ...toResponse(c), warnings })
     } catch (e) {
       return handleError(reply, e)
     }
@@ -77,7 +82,10 @@ export class CampaignsController {
         request.params.id,
         request.body
       )
-      return reply.send(toResponse(c))
+      const warnings: ValidationIssue[] = request.body.flowDefinition
+        ? flowWarnings(request.body.flowDefinition)
+        : []
+      return reply.send({ ...toResponse(c), warnings })
     } catch (e) {
       return handleError(reply, e)
     }
