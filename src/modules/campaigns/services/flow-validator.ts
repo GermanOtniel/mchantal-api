@@ -141,6 +141,11 @@ function validateText(
   if (next !== undefined && next !== '' && !nodeIds.has(next)) {
     issues.push(issue(`${base}.nextNodeId`, 'NODE_REF_NOT_FOUND', `nextNodeId apunta a un nodo inexistente ("${next}").`))
   }
+  if (node.assignment) {
+    if (validateAssignmentDirective(node.assignment).length > 0) {
+      issues.push(issue(`${base}.assignment`, 'ASSIGNMENT_INVALID', 'La directiva de asignación es inválida.'))
+    }
+  }
 }
 
 function validateFreeText(
@@ -158,6 +163,11 @@ function validateFreeText(
   const next = node.nextNodeId
   if (next !== undefined && next !== '' && !nodeIds.has(next)) {
     issues.push(issue(`${base}.nextNodeId`, 'NODE_REF_NOT_FOUND', `nextNodeId apunta a un nodo inexistente ("${next}").`))
+  }
+  if (node.assignment) {
+    if (validateAssignmentDirective(node.assignment).length > 0) {
+      issues.push(issue(`${base}.assignment`, 'ASSIGNMENT_INVALID', 'La directiva de asignación es inválida.'))
+    }
   }
 }
 

@@ -385,3 +385,22 @@ describe('validateFlowDefinition — free_text', () => {
   it('storeAs vacío → FREE_TEXT_STOREAS_EMPTY', () => expect(codes(validateFlowDefinition(flow({ storeAs: '' })))).toContain('FREE_TEXT_STOREAS_EMPTY'))
   it('nextNodeId a inexistente → NODE_REF_NOT_FOUND', () => expect(codes(validateFlowDefinition(flow({ nextNodeId: 'no_existe' })))).toContain('NODE_REF_NOT_FOUND'))
 })
+
+describe('validateFlowDefinition — assignment en cierres/free_text', () => {
+  it('text_message con assignment inválido → ASSIGNMENT_INVALID', () => {
+    const flow = validFlow()
+    ;(flow.nodes.closing as { assignment?: unknown }).assignment = { mode: 'executive', executiveId: '' }
+    expect(codes(validateFlowDefinition(flow))).toContain('ASSIGNMENT_INVALID')
+  })
+  it('text_message con assignment válido → sin issues', () => {
+    const flow = validFlow()
+    ;(flow.nodes.closing as { assignment?: unknown }).assignment = { mode: 'manual' }
+    expect(validateFlowDefinition(flow)).toEqual([])
+  })
+  it('free_text con assignment inválido → ASSIGNMENT_INVALID', () => {
+    const flow = validFlow()
+    flow.nodes.capture = { id: 'capture', type: 'free_text', body: '¿Comentario?', storeAs: 'com', nextNodeId: undefined, assignment: { mode: 'pool', selector: { kind: 'coverage', attribute: '', value: '{{answers.estado}}' }, strategy: 'round_robin' } }
+    ;(flow.nodes.welcome as { transitions?: Record<string,string> }).transitions = { comprar: 'capture' }
+    expect(codes(validateFlowDefinition(flow))).toContain('ASSIGNMENT_INVALID')
+  })
+})
