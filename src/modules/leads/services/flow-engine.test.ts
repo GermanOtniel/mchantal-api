@@ -807,3 +807,20 @@ describe('FlowEngine — assignment en text_message', () => {
     expect((state.context as { assigned?: boolean }).assigned).toBeUndefined()
   })
 })
+
+describe('FlowEngine — assignment en free_text', () => {
+  it('free_text con assignment → asigna al capturar', async () => {
+    const flow: FlowDefinition = { nodes: {
+      capture: { id: 'capture', type: 'free_text', body: '¿Comentario?', storeAs: 'com', assignment: { mode: 'executive', executiveId: 'e1' } },
+    } }
+    const { lead, state } = leadAndState(flow, 'capture')
+    const deps = wireLead(lead, state)
+    deps.assignment = { resolve: vi.fn(async () => ({ mode: 'executive', executiveId: 'e1' })) }
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'Hola' }) }))
+    expect(deps.assignment.resolve).toHaveBeenCalledWith({ mode: 'executive', executiveId: 'e1' }, expect.anything())
+    expect(lead.assignedExecutiveId).toBe('e1')
+    expect((state.context as { assigned?: boolean }).assigned).toBe(true)
+  })
+})

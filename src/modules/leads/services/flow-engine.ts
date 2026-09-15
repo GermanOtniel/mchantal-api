@@ -210,6 +210,8 @@ export class FlowEngine {
     flowState.context = { ...flowState.context, answers }
     await this.deps.flowStates.save(flowState)
 
+    await this.maybeAssign(lead, flowState, node.assignment)
+
     if (node.nextNodeId) {
       await this.executeNode(sender, ctx, lead, flowState, node.nextNodeId)
     } else {
