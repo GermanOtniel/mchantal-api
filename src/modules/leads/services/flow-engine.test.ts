@@ -781,3 +781,29 @@ describe('FlowEngine — paused no-op', () => {
     expect(extra.realtimeBus.publish).not.toHaveBeenCalled()
   })
 })
+
+describe('FlowEngine — assignment en text_message', () => {
+  it('cierre con assignment manual → asigna al llegar y marca flag', async () => {
+    const flow = demoFlow()
+    ;(flow.nodes.closing_piel as { assignment?: unknown }).assignment = { mode: 'manual' }
+    const { lead, state } = leadAndState(flow, 'ask_producto')
+    const deps = wireLead(lead, state)
+    deps.assignment = { resolve: vi.fn(async () => ({ mode: 'manual', executiveId: null })) }
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', interactiveReplyId: 'piel' }) }))
+    expect(deps.assignment.resolve).toHaveBeenCalledWith({ mode: 'manual' }, expect.anything())
+    expect(lead.assignmentMode).toBe('manual')
+    expect((state.context as { assigned?: boolean }).assigned).toBe(true)
+  })
+  it('cierre sin assignment → no asigna, flag ausente', async () => {
+    const flow = demoFlow()
+    const { lead, state } = leadAndState(flow, 'ask_producto')
+    const deps = wireLead(lead, state)
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', interactiveReplyId: 'piel' }) }))
+    expect(deps.assignment.resolve).not.toHaveBeenCalled()
+    expect((state.context as { assigned?: boolean }).assigned).toBeUndefined()
+  })
+})

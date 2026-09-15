@@ -3,6 +3,7 @@ import type { NormalizedMessage } from '../../../shared/whatsapp/types/inbound.t
 import type {
   FlowDefinition,
   InteractiveButtonsNode,
+  TextMessageNode,
   TextInputNode,
   FreeTextNode,
 } from '../../campaigns/types/flow.types'
@@ -237,6 +238,7 @@ export class FlowEngine {
       await this.sendInteractive(sender, ctx, flowState, node)
     } else if (node.type === 'text_message') {
       await this.sendText(sender, ctx, flowState, node.body, { nodeId: node.id })
+      await this.maybeAssign(lead, flowState, (node as TextMessageNode).assignment)
       if (node.nextNodeId) {
         await this.executeNode(sender, ctx, lead, flowState, node.nextNodeId)
       } else {
@@ -248,6 +250,23 @@ export class FlowEngine {
       // text_input / free_text: envía el prompt y espera el siguiente mensaje del lead
       await this.sendText(sender, ctx, flowState, node.body, { nodeId: node.id })
     }
+  }
+
+  private async maybeAssign(
+    lead: CampaignLeadData,
+    flowState: LeadFlowStateData,
+    directive: AssignmentDirective | undefined
+  ): Promise<void> {
+    if (!directive) return
+    const ctxAssigned = (flowState.context as { assigned?: boolean }).assigned
+    if (ctxAssigned) return
+    const result = await this.deps.assignment.resolve(directive, flowState.context)
+    lead.assignmentMode = result.mode
+    lead.assignedExecutiveId = result.executiveId
+    lead.assignedAt = new Date()
+    await this.deps.campaignLeads.save(lead)
+    flowState.context = { ...flowState.context, assigned: true }
+    await this.deps.flowStates.save(flowState)
   }
 
   private async sendInteractive(
