@@ -399,7 +399,7 @@ describe('validateFlowDefinition — assignment en cierres/free_text', () => {
   it('text_message con assignment válido → sin issues', () => {
     const flow = validFlow()
     ;(flow.nodes.closing as { assignment?: unknown }).assignment = { mode: 'manual' }
-    expect(validateFlowDefinition(flow)).toEqual([])
+    expect(errors(validateFlowDefinition(flow))).toEqual([])
   })
   it('free_text con assignment inválido → ASSIGNMENT_INVALID', () => {
     const flow = validFlow()
@@ -441,5 +441,38 @@ describe('validateFlowDefinition — avisos de asignación (warnings)', () => {
     flow.nodes.ask = { id: 'ask', type: 'text_input', body: '¿Estado?', storeAs: 'estado', matcher: { dictionaryId: 'd1' }, transitions: { jalisco: 'closing' }, assignment: { mode: 'manual' } }
     ;(flow.nodes.welcome as { transitions?: Record<string,string> }).transitions = { comprar: 'ask' }
     expect(validateFlowDefinition(flow).filter(i => i.severity === 'warning')).toEqual([])
+  })
+  it('text_input con SÓLO assignmentOverrides (sin default) → warn en rama sin override', () => {
+    // assignmentOverrides sólo cubre jalisco; nuevo_leon no recibe asignación →
+    // su rama terminal debe marcar BRANCH_WITHOUT_ASSIGNMENT (conservador).
+    const flow: FlowDefinition = {
+      nodes: {
+        welcome: { id: 'welcome', type: 'interactive_buttons', body: '¿?', buttons: [{ id: 'b1', title: 'Ir' }], transitions: { b1: 'ask_estado' }, onFreeText: 'reprompt' },
+        ask_estado: {
+          id: 'ask_estado', type: 'text_input', body: '¿Estado?', storeAs: 'estado', matcher: { dictionaryId: 'd1' },
+          transitions: { jalisco: 'closing_jal', nuevo_leon: 'closing_nl' },
+          assignmentOverrides: { jalisco: { mode: 'manual' } },
+        },
+        closing_jal: { id: 'closing_jal', type: 'text_message', body: 'jal' },
+        closing_nl: { id: 'closing_nl', type: 'text_message', body: 'nl' },
+      },
+    }
+    const warns = validateFlowDefinition(flow).filter(i => i.severity === 'warning')
+    expect(warns.some(w => w.code === 'BRANCH_WITHOUT_ASSIGNMENT' && w.field.includes('closing_nl'))).toBe(true)
+  })
+  it('text_input con fallback.transition y sin defaultTransition → NO es terminal (sin warning propio)', () => {
+    const flow: FlowDefinition = {
+      nodes: {
+        welcome: { id: 'welcome', type: 'interactive_buttons', body: '¿?', buttons: [{ id: 'b1', title: 'Ir' }], transitions: { b1: 'ask_estado' }, onFreeText: 'reprompt' },
+        ask_estado: {
+          id: 'ask_estado', type: 'text_input', body: '¿Estado?', storeAs: 'estado', matcher: { dictionaryId: 'd1' },
+          transitions: { jalisco: 'closing' },
+          fallback: { transition: 'closing' },
+        },
+        closing: { id: 'closing', type: 'text_message', body: '¡Gracias!', assignment: { mode: 'manual' } },
+      },
+    }
+    const warns = validateFlowDefinition(flow).filter(i => i.severity === 'warning')
+    expect(warns.some(w => w.code === 'BRANCH_WITHOUT_ASSIGNMENT' && w.field.includes('ask_estado'))).toBe(false)
   })
 })

@@ -29,7 +29,10 @@ function issue(field: string, code: string, message: string, severity: 'error' |
   return { field, code, message, severity }
 }
 
-/** Valida la estructura y coherencia de un flowDefinition. Devuelve [] si es valido. */
+/**
+ * Valida la estructura y coherencia de un flowDefinition.
+ * Devuelve [] si no hay errores; puede incluir warnings (severity 'warning').
+ */
 export function validateFlowDefinition(flow: unknown): ValidationIssue[] {
   const issues: ValidationIssue[] = []
   const nodes = (flow as { nodes?: unknown } | null)?.nodes
@@ -288,11 +291,13 @@ function detectAssignmentWarnings(
     if (!isPlainObject(node)) return false
     const t = node.type
     if (t === 'text_message' || t === 'free_text') return !!node.assignment
-    if (t === 'text_input') {
-      if (node.assignment) return true
-      const ov = node.assignmentOverrides
-      return isPlainObject(ov) && Object.keys(ov).length > 0
-    }
+    // text_input cuenta como auto-asignador para la propagación de hasAssignment
+    // SOLO si tiene un `assignment` por defecto (cubre toda categoría).
+    // Con sólo `assignmentOverrides` (sin default) NO propaga: cada rama se evalúa
+    // independientemente, para no silenciar (falso negativo) ramas cuya categoría
+    // no tiene override. Esto puede sobre-avisar en ramas que sí tienen override
+    // (están asignadas en runtime) — dirección conservadora: sobre-avisar > falso negativo.
+    if (t === 'text_input') return !!node.assignment
     return false // interactive_buttons no lleva asignación
   }
 
@@ -301,10 +306,11 @@ function detectAssignmentWarnings(
     const t = node.type
     if (t === 'text_message' || t === 'free_text') return !node.nextNodeId
     if (t === 'text_input') {
+      // Terminal si no progresa por defecto ni por fallback en no-coincidencia.
       const hasDefault = !!node.defaultTransition
-      const transCount = isPlainObject(node.transitions) ? Object.keys(node.transitions).length : 0
-      // terminal puro: sin default ni transitions; conservador: con transitions pero sin default.
-      return !hasDefault
+      const hasFallbackTransition =
+        isPlainObject(node.fallback) && typeof (node.fallback as { transition?: unknown }).transition === 'string' && !!(node.fallback as { transition?: string }).transition
+      return !hasDefault && !hasFallbackTransition
     }
     return false
   }
