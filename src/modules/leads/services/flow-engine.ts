@@ -159,13 +159,7 @@ export class FlowEngine {
     // Resuelve la directiva de asignación (override por categoría gana al default)
     const directive: AssignmentDirective | undefined =
       node.assignmentOverrides?.[result.categoryId] ?? node.assignment
-    if (directive) {
-      const assignmentResult = await this.deps.assignment.resolve(directive, flowState.context)
-      lead.assignmentMode = assignmentResult.mode
-      lead.assignedExecutiveId = assignmentResult.executiveId
-      lead.assignedAt = new Date()
-      await this.deps.campaignLeads.save(lead)
-    }
+    await this.maybeAssign(lead, flowState, directive)
 
     // Avanza a la transición de la categoría (override) o al defaultTransition
     const target = node.transitions[result.categoryId] ?? node.defaultTransition

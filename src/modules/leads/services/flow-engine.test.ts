@@ -824,3 +824,26 @@ describe('FlowEngine — assignment en free_text', () => {
     expect((state.context as { assigned?: boolean }).assigned).toBe(true)
   })
 })
+
+describe('FlowEngine — text_input respeta flag assigned', () => {
+  it('text_input con assignment no pisa si un ancestro ya asignó (flag assigned)', async () => {
+    const flow: FlowDefinition = { nodes: {
+      welcome: { id:'welcome', type:'interactive_buttons', body:'¿?', buttons:[{id:'b1',title:'Sí'}], transitions:{ b1:'closing_intermedio' } },
+      closing_intermedio: { id:'closing_intermedio', type:'text_message', body:'Ok', nextNodeId:'ask', assignment:{ mode:'manual' } },
+      ask: { id:'ask', type:'text_input', body:'¿Estado?', storeAs:'estado', matcher:{ dictionaryId:'d1' }, transitions:{ jalisco:'closing' }, assignment:{ mode:'pool', selector:{ kind:'coverage', attribute:'states', value:'{{answers.estado}}' }, strategy:'round_robin' } },
+      closing: { id:'closing', type:'text_message', body:'Listo' },
+    } }
+    const { lead, state } = leadAndState(flow, 'welcome')
+    const deps = wireLead(lead, state)
+    deps.dictionaries = { findById: vi.fn(async () => ({ id:'d1', slug:'x', name:'x', categories:[{id:'jalisco',label:'Jalisco',aliases:['jalisco']}], isSystem:false })) }
+    let resolveCall = 0
+    deps.assignment = { resolve: vi.fn(async () => { resolveCall++; return resolveCall === 1 ? { mode:'manual', executiveId: null } : { mode:'pool', executiveId: 'e2' } }) }
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+    await engine.handleInbound(sender, ctx({ message: msg({ type:'text', interactiveReplyId:'b1' }) }))
+    expect(lead.assignmentMode).toBe('manual')
+    await engine.handleInbound(sender, ctx({ message: msg({ type:'text', text:'jalisco' }) }))
+    expect(lead.assignmentMode).toBe('manual') // no pisado por ask
+    expect(resolveCall).toBe(1) // ask no llamó a resolve (flag assigned)
+  })
+})
