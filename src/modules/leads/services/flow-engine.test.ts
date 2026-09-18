@@ -77,6 +77,7 @@ function makeDeps(over: Partial<FlowEngineDeps> = {}): FlowEngineDeps {
   return {
     captures: { findPendingByFolio: vi.fn(async () => null), markMatched: vi.fn(async () => {}) },
     campaigns: { findActiveBase: vi.fn(async () => null) },
+    reengageWindowHours: 24,
     campaignLeads: {
       findByContactAndCampaign: vi.fn(async () => null),
       create: vi.fn(async (d) => ({
