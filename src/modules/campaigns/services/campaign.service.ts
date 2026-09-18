@@ -14,6 +14,7 @@ export type CreateCampaignInput = {
   entryMessage: string
   flowDefinition?: Record<string, unknown>
   origins?: string[]
+  kind?: 'base' | 'normal'
 }
 
 /** Normaliza la lista de orígenes: trim, colapsa espacios internos, dedupe
@@ -76,6 +77,7 @@ export class CampaignService {
       entryMessage: input.entryMessage,
       flowDefinition: flow,
       origins: normalizeOrigins(input.origins),
+      kind: input.kind ?? 'normal',
     })
   }
 
