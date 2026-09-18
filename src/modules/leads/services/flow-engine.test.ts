@@ -880,7 +880,7 @@ describe('FlowEngine — campaña base (orphans)', () => {
         findById: vi.fn(async () => null),
         save: vi.fn(async (l) => l),
       },
-      leadEvents: { record: vi.fn(async () => ({})) } as never,
+      leadEvents: { record: vi.fn(async (d: unknown) => d) },
     })
     const { sender, sent } = makeSender()
     const engine = new FlowEngine(deps)
@@ -900,6 +900,9 @@ describe('FlowEngine — campaña base (orphans)', () => {
     expect(sender.sendInteractiveButtons).toHaveBeenCalledWith(
       expect.objectContaining({ toWaId: '12345', body: 'Hola, no detectamos tu folio. ¿Te ayudo?' })
     )
+    expect(deps.leadEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'enrolled', reason: 'base_campaign' })
+    )
     expect(sent).toHaveLength(1)
   })
 
@@ -913,7 +916,7 @@ describe('FlowEngine — campaña base (orphans)', () => {
         findById: vi.fn(async () => null),
         save: vi.fn(async (l) => l),
       },
-      leadEvents: { record: vi.fn(async () => ({})) } as never,
+      leadEvents: { record: vi.fn(async (d: unknown) => d) },
     })
     const { sender, sent } = makeSender()
     const engine = new FlowEngine(deps)
@@ -922,6 +925,9 @@ describe('FlowEngine — campaña base (orphans)', () => {
 
     expect(deps.captures.findPendingByFolio).toHaveBeenCalledWith(FOLIO)
     expect(deps.campaignLeads.create).toHaveBeenCalledWith(expect.objectContaining({ campaignId: 'base1' }))
+    expect(deps.leadEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'enrolled', reason: 'base_campaign' })
+    )
     expect(sent).toHaveLength(1)
   })
 
@@ -988,7 +994,7 @@ describe('FlowEngine — campaña base (orphans)', () => {
         findById: vi.fn(async () => null),
         save: vi.fn(async (l) => l),
       },
-      leadEvents: { record: vi.fn(async () => ({})) } as never,
+      leadEvents: { record: vi.fn(async (d: unknown) => d) },
     })
     const { sender, sent } = makeSender()
     const engine = new FlowEngine(deps)
@@ -996,6 +1002,7 @@ describe('FlowEngine — campaña base (orphans)', () => {
     await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'hola' }) }))
 
     expect(deps.campaignLeads.create).not.toHaveBeenCalled()
+    expect(deps.leadEvents.record).not.toHaveBeenCalled()
     expect(deps.conversations.setLead).toHaveBeenCalledWith('conv1', 'leadB')
     expect(sent).toHaveLength(1)
   })

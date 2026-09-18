@@ -32,9 +32,10 @@ export function getConversationService(): ConversationService {
     const contacts = new WhatsAppContactRepository()
     const dictionaries = new MatcherDictionaryRepository()
     const assignment = new AssignmentService(new ExecutiveRepository())
+    const campaignRepo = new CampaignRepository()
     const campaigns: BaseCampaignPort = {
       findActiveBase: async (): Promise<BaseCampaignData | null> => {
-        const c = await new CampaignRepository().findActiveBase()
+        const c = await campaignRepo.findActiveBase()
         if (!c) return null
         return { id: c.id, flowDefinition: c.flowDefinition as unknown as FlowDefinition }
       },
