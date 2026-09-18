@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { generateFolio, generateFolioSuffix, FOLIO_REGEX } from './folio.service'
+import { generateFolio, generateFolioSuffix, generateBaseFolio, FOLIO_REGEX } from './folio.service'
 
 describe('folio.service', () => {
   it('generateFolio produce un folio con prefijo MC- y 5 chars', () => {
@@ -25,5 +25,23 @@ describe('folio.service', () => {
 
   it('generateFolioSuffix tiene largo 5', () => {
     expect(generateFolioSuffix().length).toBe(5)
+  })
+})
+
+describe('generateBaseFolio', () => {
+  it('tiene prefijo B- y 5 chars del charset', () => {
+    const folio = generateBaseFolio()
+    expect(folio).toMatch(/^B-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{5}$/)
+  })
+
+  it('no es matcheado por FOLIO_REGEX (no re-dispara enrollFromFolio)', () => {
+    const folio = generateBaseFolio()
+    expect(FOLIO_REGEX.test(folio)).toBe(false)
+  })
+
+  it('genera valores distintos en llamadas sucesivas (no constante)', () => {
+    const samples = new Set<string>()
+    for (let i = 0; i < 50; i++) samples.add(generateBaseFolio())
+    expect(samples.size).toBeGreaterThan(1)
   })
 })
