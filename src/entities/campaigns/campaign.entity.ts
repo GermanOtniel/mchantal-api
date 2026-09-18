@@ -26,6 +26,9 @@ export class Campaign {
   @Column({ type: 'text', array: true, default: () => "'{}'" })
   origins!: string[]
 
+  @Column({ type: 'varchar', length: 20, default: 'normal' })
+  kind!: 'base' | 'normal'
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date
 
