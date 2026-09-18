@@ -27,6 +27,7 @@ function makeCampaign(over: Partial<Campaign> = {}): Campaign {
     entryMessage: 'Hola, mi folio es {{folio}}',
     flowDefinition: { nodes: {} },
     origins: [],
+    kind: 'normal' as const,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...over,
@@ -40,6 +41,7 @@ function makeRepo(over: Partial<CampaignRepositoryPort> = {}): CampaignRepositor
     findById: vi.fn().mockResolvedValue(makeCampaign()),
     listAll: vi.fn().mockResolvedValue([]),
     slugExists: vi.fn().mockResolvedValue(false),
+    findActiveBase: vi.fn().mockResolvedValue(null),
     ...over,
   }
 }
@@ -59,6 +61,7 @@ describe('CampaignService.createCampaign', () => {
       entryMessage: 'Hola, mi folio es {{folio}}',
       flowDefinition: validFlow(),
       origins: [],
+      kind: 'normal',
     })
   })
 
@@ -177,5 +180,61 @@ describe('CampaignService.updateCampaign', () => {
     const svc = new CampaignService(repo)
     await svc.updateCampaign('c1', { origins: [' TikTok ', 'tiktok'] })
     expect(repo.update).toHaveBeenCalledWith('c1', expect.objectContaining({ origins: ['TikTok'] }))
+  })
+})
+
+describe('CampaignService.createCampaign — base', () => {
+  it('kind=base: ignora entryMessage y origins', async () => {
+    const repo = makeRepo()
+    const svc = new CampaignService(repo)
+    await svc.createCampaign({
+      name: 'Base',
+      entryMessage: 'Hola {{folio}}',
+      origins: ['Facebook'],
+      kind: 'base',
+      flowDefinition: validFlow(),
+    })
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'base',
+        entryMessage: '',
+        origins: [],
+      })
+    )
+  })
+
+  it('kind=base: lanza 409 BASE_ALREADY_EXISTS si ya hay base', async () => {
+    const repo = makeRepo({ findActiveBase: vi.fn().mockResolvedValue(makeCampaign({ kind: 'base' })) })
+    const svc = new CampaignService(repo)
+    await expect(
+      svc.createCampaign({ name: 'Base', entryMessage: 'x', kind: 'base', flowDefinition: validFlow() })
+    ).rejects.toMatchObject({ statusCode: 409, code: 'BASE_ALREADY_EXISTS' })
+    expect(repo.create).not.toHaveBeenCalled()
+  })
+
+  it('kind=base: requiere al menos un nodo interactivo en el flujo', async () => {
+    const repo = makeRepo()
+    const svc = new CampaignService(repo)
+    await expect(
+      svc.createCampaign({ name: 'Base', entryMessage: 'x', kind: 'base', flowDefinition: { nodes: {} } })
+    ).rejects.toMatchObject({ code: 'INVALID_FLOW' })
+  })
+
+  it('kind por defecto es normal', async () => {
+    const repo = makeRepo()
+    const svc = new CampaignService(repo)
+    await svc.createCampaign({ name: 'Demo', entryMessage: 'Hola {{folio}}', flowDefinition: validFlow() })
+    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ kind: 'normal' }))
+  })
+})
+
+describe('CampaignService.updateCampaign — kind inmutable', () => {
+  it('lanza 400 si el patch intenta cambiar kind', async () => {
+    const repo = makeRepo({ findById: vi.fn().mockResolvedValue(makeCampaign({ kind: 'normal' })) })
+    const svc = new CampaignService(repo)
+    await expect(
+      svc.updateCampaign('c1', { kind: 'base' } as unknown as Record<string, unknown>)
+    ).rejects.toMatchObject({ code: 'KIND_IMMUTABLE' })
+    expect(repo.update).not.toHaveBeenCalled()
   })
 })
