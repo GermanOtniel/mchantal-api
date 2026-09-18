@@ -11,7 +11,7 @@ const EMPTY_FLOW: Record<string, unknown> = { nodes: {} }
 
 export type CreateCampaignInput = {
   name: string
-  entryMessage: string
+  entryMessage?: string
   flowDefinition?: Record<string, unknown>
   origins?: string[]
   kind?: 'base' | 'normal'
@@ -107,7 +107,7 @@ export class CampaignService {
     return this.campaigns.create({
       slug,
       name: input.name,
-      entryMessage: kind === 'base' ? '' : input.entryMessage,
+      entryMessage: kind === 'base' ? '' : input.entryMessage ?? '',
       flowDefinition: flow,
       origins: kind === 'base' ? [] : normalizeOrigins(input.origins),
       kind,

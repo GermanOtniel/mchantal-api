@@ -18,6 +18,7 @@ export const CampaignResponseSchema = Type.Object({
   entryMessage: Type.String(),
   flowDefinition: FlowDefinitionSchema,
   origins: Type.Array(Type.String()),
+  kind: Type.Union([Type.Literal('base'), Type.Literal('normal')]),
   createdAt: Type.String(),
   updatedAt: Type.String(),
   warnings: Type.Optional(Type.Array(FlowWarningSchema)),
@@ -30,9 +31,10 @@ export const CampaignListResponseSchema = Type.Object({
 export const CreateCampaignBodySchema = Type.Object(
   {
     name: Type.String({ minLength: 2, maxLength: 200 }),
-    entryMessage: Type.String({ minLength: 1, maxLength: 2000 }),
+    entryMessage: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
     flowDefinition: Type.Optional(FlowDefinitionSchema),
     origins: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 60 }))),
+    kind: Type.Optional(Type.Union([Type.Literal('base'), Type.Literal('normal')])),
   },
   { additionalProperties: false }
 )

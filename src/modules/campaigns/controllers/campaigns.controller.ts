@@ -18,6 +18,7 @@ function toResponse(c: Campaign) {
     entryMessage: c.entryMessage,
     flowDefinition: c.flowDefinition,
     origins: c.origins,
+    kind: c.kind,
     createdAt: c.createdAt.toISOString(),
     updatedAt: c.updatedAt.toISOString(),
   }
