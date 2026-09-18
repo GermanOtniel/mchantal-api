@@ -40,9 +40,15 @@ export class FlowEngine {
     const lead = await this.deps.campaignLeads.findById(conversation.leadId)
     if (!lead) return
 
-    const flowState = await this.deps.flowStates.findActiveByCampaignLeadId(lead.id)
-    if (!flowState) return
+    const flowState = await this.deps.flowStates.findByCampaignLeadId(lead.id)
+    if (this.shouldReengage(lead, flowState)) {
+      const base = await this.deps.campaigns.findActiveBase()
+      if (!base) return
+      await this.enrollInBase(sender, ctx, base)
+      return
+    }
 
+    if (!flowState || flowState.status !== 'active') return
     await this.processFlowInput(sender, ctx, lead, flowState)
   }
 
@@ -81,7 +87,16 @@ export class FlowEngine {
 
     const entryNodeId = findFirstInteractiveNode(capture.campaign.flowDefinition)
     if (!entryNodeId) return true
+    await this.startOrRestartFlow(sender, ctx, lead, entryNodeId)
+    return true
+  }
 
+  private async startOrRestartFlow(
+    sender: WhatsAppSender,
+    ctx: InboundFlowContext,
+    lead: CampaignLeadData,
+    entryNodeId: string
+  ): Promise<void> {
     let flowState = await this.deps.flowStates.findByCampaignLeadId(lead.id)
     if (!flowState) {
       flowState = await this.deps.flowStates.create({
@@ -91,10 +106,13 @@ export class FlowEngine {
         status: 'active',
         lastInteractionAt: new Date(),
       })
+    } else if (flowState.status !== 'active') {
+      // Re-engagement: reset a active y limpia completedAt. executeNode seteará currentNodeId=entry y lastInteractionAt.
+      flowState.status = 'active'
+      flowState.completedAt = null
+      await this.deps.flowStates.save(flowState)
     }
-
     await this.executeNode(sender, ctx, lead, flowState, entryNodeId)
-    return true
   }
 
   private async enrollInBase(
@@ -128,19 +146,15 @@ export class FlowEngine {
 
     const entryNodeId = findFirstInteractiveNode(base.flowDefinition)
     if (!entryNodeId) return
+    await this.startOrRestartFlow(sender, ctx, lead, entryNodeId)
+  }
 
-    let flowState = await this.deps.flowStates.findByCampaignLeadId(lead.id)
-    if (!flowState) {
-      flowState = await this.deps.flowStates.create({
-        campaignLeadId: lead.id,
-        currentNodeId: entryNodeId,
-        context: lead.context,
-        status: 'active',
-        lastInteractionAt: new Date(),
-      })
-    }
-
-    await this.executeNode(sender, ctx, lead, flowState, entryNodeId)
+  private shouldReengage(lead: CampaignLeadData, flowState: LeadFlowStateData | null): boolean {
+    if (lead.status !== 'qualified' && lead.status !== 'disqualified') return false
+    if (flowState?.status === 'paused') return false
+    const lastInteraction = flowState?.lastInteractionAt ?? lead.enrolledAt
+    const windowMs = this.deps.reengageWindowHours * 60 * 60 * 1000
+    return Date.now() - lastInteraction.getTime() > windowMs
   }
 
   private async processFlowInput(

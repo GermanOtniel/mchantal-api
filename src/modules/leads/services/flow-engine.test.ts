@@ -1008,3 +1008,235 @@ describe('FlowEngine — campaña base (orphans)', () => {
     expect(sent).toHaveLength(1)
   })
 })
+
+// ── Task C2: re-engagement trigger 3 (lead frío sin folio → base) ──
+
+function existingLead(over: Partial<CampaignLeadData> = {}): CampaignLeadData {
+  return {
+    id: 'leadX', contactId: 'ct1', campaignId: 'campX',
+    campaign: { id: 'campX', flowDefinition: demoFlow() },
+    context: { folio: FOLIO, answers: {} },
+    assignmentMode: null, assignedExecutiveId: null, assignedAt: null,
+    status: 'qualified',
+    enrolledAt: new Date(Date.now() - 48 * 3600 * 1000),
+    origin: 'unknown',
+    ...over,
+  }
+}
+
+function completedState(over: Partial<LeadFlowStateData> = {}): LeadFlowStateData {
+  return {
+    id: 'fsX', campaignLeadId: 'leadX', currentNodeId: 'welcome',
+    context: { folio: FOLIO, answers: {} }, status: 'completed',
+    lastInteractionAt: new Date(Date.now() - 25 * 3600 * 1000),
+    completedAt: new Date(Date.now() - 25 * 3600 * 1000),
+    ...over,
+  }
+}
+
+function convWithLead(leadId = 'leadX'): ConversationData {
+  return {
+    id: 'conv1', contactId: 'ct1', contactWaId: '', status: 'open',
+    leadId, lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null,
+  }
+}
+
+function coldReengageDeps(over: Partial<FlowEngineDeps> = {}): FlowEngineDeps {
+  return makeDeps({
+    campaigns: { findActiveBase: vi.fn(async () => ({ id: 'base1', flowDefinition: baseFlow() })) },
+    conversations: {
+      findById: vi.fn(async () => convWithLead()),
+      setLead: vi.fn(async () => {}),
+      touchLastMessage: vi.fn(async () => {}),
+    },
+    campaignLeads: {
+      findByContactAndCampaign: vi.fn(async () => null),
+      create: vi.fn(async (d) => ({
+        id: 'leadB', contactId: d.contactId, campaignId: d.campaignId,
+        campaign: { id: d.campaignId, flowDefinition: baseFlow() },
+        context: d.context, origin: 'unknown', status: 'new', enrolledAt: new Date(),
+        assignmentMode: null, assignedExecutiveId: null, assignedAt: null,
+      })),
+      findById: vi.fn(async () => existingLead({ status: 'qualified' })),
+      save: vi.fn(async (l) => l),
+    },
+    flowStates: {
+      findActiveByCampaignLeadId: vi.fn(async () => null),
+      findByCampaignLeadId: vi.fn(async () => completedState()),
+      create: vi.fn(async (d) => ({ id: 'fsB', completedAt: null, ...d })),
+      save: vi.fn(async (s) => s),
+    },
+    leadEvents: { record: vi.fn(async (d: unknown) => d) } as never,
+    ...over,
+  })
+}
+
+describe('FlowEngine — re-engagement (trigger 3)', () => {
+  it('lead qualified + frio (>24h) + sin folio: enrola en base', async () => {
+    const deps = coldReengageDeps()
+    const { sender, sent } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'hola' }) }))
+
+    expect(deps.campaigns.findActiveBase).toHaveBeenCalled()
+    expect(deps.campaignLeads.create).toHaveBeenCalledWith(expect.objectContaining({ campaignId: 'base1' }))
+    expect(deps.conversations.setLead).toHaveBeenCalledWith('conv1', 'leadB')
+    expect(sent).toHaveLength(1)
+  })
+
+  it('lead disqualified + frio: tambien enrola en base', async () => {
+    const deps = coldReengageDeps({
+      campaignLeads: {
+        findByContactAndCampaign: vi.fn(async () => null),
+        create: vi.fn(async (d) => ({
+          id: 'leadB', contactId: d.contactId, campaignId: d.campaignId,
+          campaign: { id: d.campaignId, flowDefinition: baseFlow() },
+          context: d.context, origin: 'unknown', status: 'new', enrolledAt: new Date(),
+          assignmentMode: null, assignedExecutiveId: null, assignedAt: null,
+        })),
+        findById: vi.fn(async () => existingLead({ status: 'disqualified' })),
+        save: vi.fn(async (l) => l),
+      },
+    })
+    const { sender, sent } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'hola' }) }))
+
+    expect(deps.campaigns.findActiveBase).toHaveBeenCalled()
+    expect(deps.campaignLeads.create).toHaveBeenCalledWith(expect.objectContaining({ campaignId: 'base1' }))
+    expect(sent).toHaveLength(1)
+  })
+
+  it('lead in_progress + frio: NO enrola en base (silencioso si flow completed)', async () => {
+    const deps = coldReengageDeps({
+      campaignLeads: {
+        findByContactAndCampaign: vi.fn(async () => null),
+        create: vi.fn(async () => { throw new Error('no debe crear base') }),
+        findById: vi.fn(async () => existingLead({ status: 'in_progress' })),
+        save: vi.fn(async (l) => l),
+      },
+      flowStates: {
+        findActiveByCampaignLeadId: vi.fn(async () => null),
+        findByCampaignLeadId: vi.fn(async () => completedState()),
+        create: vi.fn(async () => { throw new Error('no debe crear flowState') }),
+        save: vi.fn(async (s) => s),
+      },
+    })
+    const { sender, sent } = makeSender()
+    const engine = new FlowEngine(deps)
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'hola' }) }))
+    expect(deps.campaigns.findActiveBase).not.toHaveBeenCalled()
+    expect(deps.campaignLeads.create).not.toHaveBeenCalled()
+    expect(sent).toHaveLength(0)
+  })
+
+  it('lead qualified pero DENTRO de ventana (<24h): NO re-engageda (silencioso si flow completed)', async () => {
+    const deps = coldReengageDeps({
+      campaignLeads: {
+        findByContactAndCampaign: vi.fn(async () => null),
+        create: vi.fn(async () => { throw new Error('no debe crear') }),
+        findById: vi.fn(async () => existingLead({ status: 'qualified' })),
+        save: vi.fn(async (l) => l),
+      },
+      flowStates: {
+        findActiveByCampaignLeadId: vi.fn(async () => null),
+        findByCampaignLeadId: vi.fn(async () => completedState({ lastInteractionAt: new Date(Date.now() - 3600 * 1000) })),
+        create: vi.fn(async () => { throw new Error('no debe crear') }),
+        save: vi.fn(async (s) => s),
+      },
+    })
+    const { sender, sent } = makeSender()
+    const engine = new FlowEngine(deps)
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'hola' }) }))
+    expect(deps.campaigns.findActiveBase).not.toHaveBeenCalled()
+    expect(sent).toHaveLength(0)
+  })
+
+  it('lead qualified + frio pero flow paused: NO re-engageda (agente manual)', async () => {
+    const deps = coldReengageDeps({
+      campaignLeads: {
+        findById: vi.fn(async () => existingLead({ status: 'qualified' })),
+        findByContactAndCampaign: vi.fn(async () => null),
+        create: vi.fn(async () => { throw new Error('no debe crear') }),
+        save: vi.fn(async (l) => l),
+      },
+      flowStates: {
+        findActiveByCampaignLeadId: vi.fn(async () => null),
+        findByCampaignLeadId: vi.fn(async () => completedState({ status: 'paused' })),
+        create: vi.fn(async () => { throw new Error('no debe crear') }),
+        save: vi.fn(async (s) => s),
+      },
+    })
+    const { sender, sent } = makeSender()
+    const engine = new FlowEngine(deps)
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'hola' }) }))
+    expect(deps.campaigns.findActiveBase).not.toHaveBeenCalled()
+    expect(sent).toHaveLength(0)
+  })
+
+  it('lead qualified + frio pero sin base configurada: silencioso', async () => {
+    const deps = coldReengageDeps({
+      campaigns: { findActiveBase: vi.fn(async () => null) },
+      campaignLeads: {
+        findById: vi.fn(async () => existingLead({ status: 'qualified' })),
+        findByContactAndCampaign: vi.fn(async () => null),
+        create: vi.fn(async () => { throw new Error('no debe crear') }),
+        save: vi.fn(async (l) => l),
+      },
+      flowStates: {
+        findActiveByCampaignLeadId: vi.fn(async () => null),
+        findByCampaignLeadId: vi.fn(async () => completedState()),
+        create: vi.fn(async () => { throw new Error('no debe crear') }),
+        save: vi.fn(async (s) => s),
+      },
+    })
+    const { sender, sent } = makeSender()
+    const engine = new FlowEngine(deps)
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'hola' }) }))
+    expect(deps.campaignLeads.create).not.toHaveBeenCalled()
+    expect(sent).toHaveLength(0)
+  })
+})
+
+describe('FlowEngine — re-engagement por folio (startOrRestartFlow)', () => {
+  it('re-engagement por folio de la misma campaña: resetea flowState completed -> active y reenvía welcome', async () => {
+    const flow = demoFlow()
+    const capture: LeadCaptureData = {
+      id: 'cap1', folio: FOLIO, campaignId: 'campX',
+      campaign: { id: 'campX', flowDefinition: flow },
+      status: 'pending', campaignLeadId: null, origin: 'unknown',
+    }
+    const leadX = existingLead({ campaign: { id: 'campX', flowDefinition: flow } })
+    const completedFs: LeadFlowStateData = {
+      id: 'fsX', campaignLeadId: 'leadX', currentNodeId: 'closing_piel',
+      context: { folio: FOLIO, answers: {} }, status: 'completed',
+      lastInteractionAt: new Date(Date.now() - 25 * 3600 * 1000),
+      completedAt: new Date(Date.now() - 25 * 3600 * 1000),
+    }
+    const deps = makeDeps({
+      captures: { findPendingByFolio: vi.fn(async () => capture), markMatched: vi.fn(async () => {}) },
+      campaignLeads: {
+        findByContactAndCampaign: vi.fn(async () => leadX),
+        create: vi.fn(async () => { throw new Error('no debe crear') }),
+        findById: vi.fn(async () => leadX),
+        save: vi.fn(async (l) => l),
+      },
+      flowStates: {
+        findActiveByCampaignLeadId: vi.fn(async () => null),
+        findByCampaignLeadId: vi.fn(async () => completedFs),
+        create: vi.fn(async () => { throw new Error('no debe crear') }),
+        save: vi.fn(async (s) => s),
+      },
+      conversations: { findById: vi.fn(async () => null), setLead: vi.fn(async () => {}), touchLastMessage: vi.fn(async () => {}) },
+    })
+    const { sender, sent } = makeSender()
+    const engine = new FlowEngine(deps)
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: `mi folio es ${FOLIO}` }) }))
+    // flowState reset a active + completedAt null
+    expect(deps.flowStates.save).toHaveBeenCalledWith(expect.objectContaining({ status: 'active', completedAt: null }))
+    expect(deps.flowStates.create).not.toHaveBeenCalled()
+    expect(sent).toHaveLength(1)
+  })
+})
