@@ -25,11 +25,14 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === 'object' && !Array.isArray(v)
 }
 
-function issue(field: string, code: string, message: string): ValidationIssue {
-  return { field, code, message }
+function issue(field: string, code: string, message: string, severity: 'error' | 'warning' = 'error'): ValidationIssue {
+  return { field, code, message, severity }
 }
 
-/** Valida la estructura y coherencia de un flowDefinition. Devuelve [] si es valido. */
+/**
+ * Valida la estructura y coherencia de un flowDefinition.
+ * Devuelve [] si no hay errores; puede incluir warnings (severity 'warning').
+ */
 export function validateFlowDefinition(flow: unknown): ValidationIssue[] {
   const issues: ValidationIssue[] = []
   const nodes = (flow as { nodes?: unknown } | null)?.nodes
@@ -76,6 +79,7 @@ export function validateFlowDefinition(flow: unknown): ValidationIssue[] {
     issues.push(issue('flow.nodes', 'ENTRY_NODE_MISSING', 'Debe existir al menos un nodo interactive_buttons (entrada).'))
   } else {
     detectCycles(nodes as Record<string, unknown>, entry, issues)
+    detectAssignmentWarnings(nodes as Record<string, unknown>, entry, issues)
   }
 
   return issues
@@ -141,6 +145,11 @@ function validateText(
   if (next !== undefined && next !== '' && !nodeIds.has(next)) {
     issues.push(issue(`${base}.nextNodeId`, 'NODE_REF_NOT_FOUND', `nextNodeId apunta a un nodo inexistente ("${next}").`))
   }
+  if (node.assignment) {
+    if (validateAssignmentDirective(node.assignment).length > 0) {
+      issues.push(issue(`${base}.assignment`, 'ASSIGNMENT_INVALID', 'La directiva de asignación es inválida.'))
+    }
+  }
 }
 
 function validateFreeText(
@@ -158,6 +167,11 @@ function validateFreeText(
   const next = node.nextNodeId
   if (next !== undefined && next !== '' && !nodeIds.has(next)) {
     issues.push(issue(`${base}.nextNodeId`, 'NODE_REF_NOT_FOUND', `nextNodeId apunta a un nodo inexistente ("${next}").`))
+  }
+  if (node.assignment) {
+    if (validateAssignmentDirective(node.assignment).length > 0) {
+      issues.push(issue(`${base}.assignment`, 'ASSIGNMENT_INVALID', 'La directiva de asignación es inválida.'))
+    }
   }
 }
 
@@ -256,6 +270,108 @@ function detectCycles(
   }
 
   dfs(entryId)
+}
+
+/**
+ * DFS top-down para avisos de asignación (no bloqueantes):
+ * - BRANCH_WITHOUT_ASSIGNMENT: una rama termina sin asignación (ni propia ni heredada).
+ * - ASSIGNMENT_REDUNDANT: un nodo define asignación cuando un ancestro ya la tiene.
+ *
+ * Recorre por camino (sin visited global) usando clave (nodeId, hasAssignment) para
+ * evitar emisión duplicada y recursion infinita en ciclos (detectCycles ya reportó).
+ */
+function detectAssignmentWarnings(
+  nodes: Record<string, unknown>,
+  entryId: string,
+  issues: ValidationIssue[]
+): void {
+  const visited = new Set<string>()
+
+  const selfAssigns = (node: unknown): boolean => {
+    if (!isPlainObject(node)) return false
+    const t = node.type
+    if (t === 'text_message' || t === 'free_text') return !!node.assignment
+    // text_input cuenta como auto-asignador para la propagación de hasAssignment
+    // SOLO si tiene un `assignment` por defecto (cubre toda categoría).
+    // Con sólo `assignmentOverrides` (sin default) NO propaga: cada rama se evalúa
+    // independientemente, para no silenciar (falso negativo) ramas cuya categoría
+    // no tiene override. Esto puede sobre-avisar en ramas que sí tienen override
+    // (están asignadas en runtime) — dirección conservadora: sobre-avisar > falso negativo.
+    if (t === 'text_input') return !!node.assignment
+    return false // interactive_buttons no lleva asignación
+  }
+
+  const isTerminal = (node: unknown): boolean => {
+    if (!isPlainObject(node)) return false
+    const t = node.type
+    if (t === 'text_message' || t === 'free_text') return !node.nextNodeId
+    if (t === 'text_input') {
+      // Terminal si no progresa por defecto ni por fallback en no-coincidencia.
+      const hasDefault = !!node.defaultTransition
+      const hasFallbackTransition =
+        isPlainObject(node.fallback) && typeof (node.fallback as { transition?: unknown }).transition === 'string' && !!(node.fallback as { transition?: string }).transition
+      return !hasDefault && !hasFallbackTransition
+    }
+    return false
+  }
+
+  const childTargets = (node: unknown): string[] => {
+    if (!isPlainObject(node)) return []
+    const t = node.type
+    const out: string[] = []
+    if (t === 'interactive_buttons') {
+      const trans = node.transitions
+      if (Array.isArray(node.buttons) && isPlainObject(trans)) {
+        for (const btn of node.buttons as { id: string }[]) {
+          const tgt = trans[btn.id]
+          if (typeof tgt === 'string') out.push(tgt)
+        }
+      }
+    } else if (t === 'text_message' || t === 'free_text') {
+      if (typeof node.nextNodeId === 'string') out.push(node.nextNodeId)
+    } else if (t === 'text_input') {
+      if (isPlainObject(node.transitions)) {
+        for (const tgt of Object.values(node.transitions as Record<string, unknown>)) {
+          if (typeof tgt === 'string') out.push(tgt)
+        }
+      }
+      if (typeof node.defaultTransition === 'string') out.push(node.defaultTransition)
+      const fb = node.fallback
+      if (isPlainObject(fb) && typeof fb.transition === 'string') out.push(fb.transition)
+    }
+    return out
+  }
+
+  const dfs = (id: string, hasAssignment: boolean): void => {
+    const key = `${id}:${hasAssignment}`
+    if (visited.has(key)) return
+    visited.add(key)
+
+    const node = nodes[id]
+    if (!isPlainObject(node)) return
+
+    const base = `flow.nodes.${id}`
+    const self = selfAssigns(node)
+    if (self && hasAssignment) {
+      issues.push(issue(base, 'ASSIGNMENT_REDUNDANT', 'Asignación redundante: ya hay una en un ancestro; el motor la ignorará.', 'warning'))
+    }
+    const childHas = hasAssignment || self
+
+    if (isTerminal(node) && !childHas) {
+      issues.push(issue(base, 'BRANCH_WITHOUT_ASSIGNMENT', 'Esta rama termina sin asignación automática.', 'warning'))
+    }
+
+    for (const tgt of childTargets(node)) {
+      if (nodes[tgt] !== undefined) dfs(tgt, childHas)
+    }
+  }
+
+  dfs(entryId, false)
+}
+
+/** Issues de validación no bloqueantes (severity 'warning') para un flowDefinition. */
+export function flowWarnings(flow: unknown): ValidationIssue[] {
+  return validateFlowDefinition(flow).filter((i) => i.severity === 'warning')
 }
 
 /** Valida el mensaje de entrada (el que el lead envía). Debe contener {{folio}}. */

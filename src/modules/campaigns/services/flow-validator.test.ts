@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   validateFlowDefinition,
   validateEntryMessage,
+  flowWarnings,
   type FlowDefinition,
   type ValidationIssue,
 } from './flow-validator'
@@ -32,9 +33,13 @@ function codes(issues: ValidationIssue[]): string[] {
   return issues.map((i) => i.code)
 }
 
+function errors(issues: ValidationIssue[]): ValidationIssue[] {
+  return issues.filter((i) => (i.severity ?? 'error') === 'error')
+}
+
 describe('validateFlowDefinition — casos validos', () => {
   it('flujo minimo (welcome -> cierre) no genera issues', () => {
-    expect(validateFlowDefinition(validFlow())).toEqual([])
+    expect(errors(validateFlowDefinition(validFlow()))).toEqual([])
   })
 
   it('arbol multinivel valido no genera issues', () => {
@@ -67,13 +72,13 @@ describe('validateFlowDefinition — casos validos', () => {
         closing_promo: { id: 'closing_promo', type: 'text_message', body: 'Gracias por la promo 🎉' },
       },
     }
-    expect(validateFlowDefinition(flow)).toEqual([])
+    expect(errors(validateFlowDefinition(flow))).toEqual([])
   })
 
   it('onFreeText ausente es valido (default reprompt)', () => {
     const flow = validFlow()
     delete (flow.nodes.welcome as { onFreeText?: string }).onFreeText
-    expect(validateFlowDefinition(flow)).toEqual([])
+    expect(errors(validateFlowDefinition(flow))).toEqual([])
   })
 })
 
@@ -211,7 +216,7 @@ describe('validateFlowDefinition — entryNodeId', () => {
         closing: { id: 'closing', type: 'text_message', body: 'gracias' },
       },
     }
-    expect(validateFlowDefinition(flow)).toEqual([])
+    expect(errors(validateFlowDefinition(flow))).toEqual([])
   })
 
   it('entryNodeId que apunta a un nodo inexistente → ENTRY_NODE_INVALID', () => {
@@ -243,7 +248,7 @@ describe('validateFlowDefinition — entryNodeId', () => {
         closing: { id: 'closing', type: 'text_message', body: 'gracias' },
       },
     }
-    expect(validateFlowDefinition(flow)).toEqual([])
+    expect(errors(validateFlowDefinition(flow))).toEqual([])
   })
 })
 
@@ -274,7 +279,7 @@ describe('validateFlowDefinition — text_input', () => {
   }
 
   it('text_input válido → []', () => {
-    expect(validateFlowDefinition(textInputFlow())).toEqual([])
+    expect(errors(validateFlowDefinition(textInputFlow()))).toEqual([])
   })
 
   it('body vacío → TEXT_INPUT_BODY_EMPTY', () => {
@@ -350,13 +355,13 @@ describe('validateFlowDefinition — text_input defaultTransition', () => {
   }
 
   it('defaultTransition que apunta a nodo existente es válido', () => {
-    expect(validateFlowDefinition(flow({ defaultTransition: 'closing' }))).toEqual([])
+    expect(errors(validateFlowDefinition(flow({ defaultTransition: 'closing' })))).toEqual([])
   })
   it('defaultTransition a nodo inexistente → NODE_REF_NOT_FOUND', () => {
     expect(codes(validateFlowDefinition(flow({ defaultTransition: 'no_existe' })))).toContain('NODE_REF_NOT_FOUND')
   })
   it('sin defaultTransition ni transitions es válido (la pregunta es terminal)', () => {
-    expect(validateFlowDefinition(flow())).toEqual([])
+    expect(errors(validateFlowDefinition(flow()))).toEqual([])
   })
   it('ciclo vía defaultTransition → CYCLE', () => {
     expect(codes(validateFlowDefinition(flow({ defaultTransition: 'welcome' })))).toContain('CYCLE')
@@ -372,16 +377,137 @@ describe('validateFlowDefinition — free_text', () => {
       },
     }
   }
-  it('free_text válido → []', () => expect(validateFlowDefinition(flow())).toEqual([]))
+  it('free_text válido → []', () => expect(errors(validateFlowDefinition(flow()))).toEqual([]))
   it('con nextNodeId válido → []', () => {
     const f = flow({ nextNodeId: 'welcome' })
     ;(f.nodes.welcome as { transitions: Record<string, string> }).transitions = { b1: 'closing' }
     f.nodes.closing = { id: 'closing', type: 'text_message', body: 'gracias' } as never
     // recoloca capture.nextNodeId a closing
     ;(f.nodes.capture as { nextNodeId?: string }).nextNodeId = 'closing'
-    expect(validateFlowDefinition(f)).toEqual([])
+    expect(errors(validateFlowDefinition(f))).toEqual([])
   })
   it('body vacío → FREE_TEXT_BODY_EMPTY', () => expect(codes(validateFlowDefinition(flow({ body: '' })))).toContain('FREE_TEXT_BODY_EMPTY'))
   it('storeAs vacío → FREE_TEXT_STOREAS_EMPTY', () => expect(codes(validateFlowDefinition(flow({ storeAs: '' })))).toContain('FREE_TEXT_STOREAS_EMPTY'))
   it('nextNodeId a inexistente → NODE_REF_NOT_FOUND', () => expect(codes(validateFlowDefinition(flow({ nextNodeId: 'no_existe' })))).toContain('NODE_REF_NOT_FOUND'))
+})
+
+describe('validateFlowDefinition — assignment en cierres/free_text', () => {
+  it('text_message con assignment inválido → ASSIGNMENT_INVALID', () => {
+    const flow = validFlow()
+    ;(flow.nodes.closing as { assignment?: unknown }).assignment = { mode: 'executive', executiveId: '' }
+    expect(codes(validateFlowDefinition(flow))).toContain('ASSIGNMENT_INVALID')
+  })
+  it('text_message con assignment válido → sin issues', () => {
+    const flow = validFlow()
+    ;(flow.nodes.closing as { assignment?: unknown }).assignment = { mode: 'manual' }
+    expect(errors(validateFlowDefinition(flow))).toEqual([])
+  })
+  it('free_text con assignment inválido → ASSIGNMENT_INVALID', () => {
+    const flow = validFlow()
+    flow.nodes.capture = { id: 'capture', type: 'free_text', body: '¿Comentario?', storeAs: 'com', nextNodeId: undefined, assignment: { mode: 'pool', selector: { kind: 'coverage', attribute: '', value: '{{answers.estado}}' }, strategy: 'round_robin' } }
+    ;(flow.nodes.welcome as { transitions?: Record<string,string> }).transitions = { comprar: 'capture' }
+    expect(codes(validateFlowDefinition(flow))).toContain('ASSIGNMENT_INVALID')
+  })
+})
+
+describe('validateFlowDefinition — avisos de asignación (warnings)', () => {
+  it('rama terminal sin asignación → BRANCH_WITHOUT_ASSIGNMENT (warning)', () => {
+    const flow = validFlow()
+    const w = validateFlowDefinition(flow).find(i => i.code === 'BRANCH_WITHOUT_ASSIGNMENT')
+    expect(w).toBeDefined()
+    expect(w!.severity).toBe('warning')
+  })
+  it('rama terminal CON assignment en el cierre → sin warning', () => {
+    const flow = validFlow()
+    ;(flow.nodes.closing as { assignment?: unknown }).assignment = { mode: 'manual' }
+    expect(validateFlowDefinition(flow).filter(i => i.severity === 'warning')).toEqual([])
+  })
+  it('hijo redefine asignación cuando el ancestro ya la tiene → ASSIGNMENT_REDUNDANT (warning)', () => {
+    const flow = validFlow()
+    ;(flow.nodes.closing as { assignment?: unknown }).assignment = { mode: 'manual' }
+    flow.nodes.closing2 = { id: 'closing2', type: 'text_message', body: 'Fin', assignment: { mode: 'manual' } }
+    ;(flow.nodes.closing as { nextNodeId?: string }).nextNodeId = 'closing2'
+    const r = validateFlowDefinition(flow).find(i => i.code === 'ASSIGNMENT_REDUNDANT' && i.field.includes('closing2'))
+    expect(r).toBeDefined()
+    expect(r!.severity).toBe('warning')
+  })
+  it('free_text terminal sin asignación y sin ancestro → warning', () => {
+    const flow = validFlow()
+    flow.nodes.capture = { id: 'capture', type: 'free_text', body: '¿Comentario?', storeAs: 'com' }
+    ;(flow.nodes.welcome as { transitions?: Record<string,string> }).transitions = { comprar: 'capture' }
+    expect(codes(validateFlowDefinition(flow))).toContain('BRANCH_WITHOUT_ASSIGNMENT')
+  })
+  it('text_input con assignment y transiciones parciales → sin warning', () => {
+    const flow = validFlow()
+    flow.nodes.ask = { id: 'ask', type: 'text_input', body: '¿Estado?', storeAs: 'estado', matcher: { dictionaryId: 'd1' }, transitions: { jalisco: 'closing' }, assignment: { mode: 'manual' } }
+    ;(flow.nodes.welcome as { transitions?: Record<string,string> }).transitions = { comprar: 'ask' }
+    expect(validateFlowDefinition(flow).filter(i => i.severity === 'warning')).toEqual([])
+  })
+  it('text_input con SÓLO assignmentOverrides (sin default) → warn en rama sin override', () => {
+    // assignmentOverrides sólo cubre jalisco; nuevo_leon no recibe asignación →
+    // su rama terminal debe marcar BRANCH_WITHOUT_ASSIGNMENT (conservador).
+    const flow: FlowDefinition = {
+      nodes: {
+        welcome: { id: 'welcome', type: 'interactive_buttons', body: '¿?', buttons: [{ id: 'b1', title: 'Ir' }], transitions: { b1: 'ask_estado' }, onFreeText: 'reprompt' },
+        ask_estado: {
+          id: 'ask_estado', type: 'text_input', body: '¿Estado?', storeAs: 'estado', matcher: { dictionaryId: 'd1' },
+          transitions: { jalisco: 'closing_jal', nuevo_leon: 'closing_nl' },
+          assignmentOverrides: { jalisco: { mode: 'manual' } },
+        },
+        closing_jal: { id: 'closing_jal', type: 'text_message', body: 'jal' },
+        closing_nl: { id: 'closing_nl', type: 'text_message', body: 'nl' },
+      },
+    }
+    const warns = validateFlowDefinition(flow).filter(i => i.severity === 'warning')
+    expect(warns.some(w => w.code === 'BRANCH_WITHOUT_ASSIGNMENT' && w.field.includes('closing_nl'))).toBe(true)
+  })
+  it('text_input con fallback.transition y sin defaultTransition → NO es terminal (sin warning propio)', () => {
+    const flow: FlowDefinition = {
+      nodes: {
+        welcome: { id: 'welcome', type: 'interactive_buttons', body: '¿?', buttons: [{ id: 'b1', title: 'Ir' }], transitions: { b1: 'ask_estado' }, onFreeText: 'reprompt' },
+        ask_estado: {
+          id: 'ask_estado', type: 'text_input', body: '¿Estado?', storeAs: 'estado', matcher: { dictionaryId: 'd1' },
+          transitions: { jalisco: 'closing' },
+          fallback: { transition: 'closing' },
+        },
+        closing: { id: 'closing', type: 'text_message', body: '¡Gracias!', assignment: { mode: 'manual' } },
+      },
+    }
+    const warns = validateFlowDefinition(flow).filter(i => i.severity === 'warning')
+    expect(warns.some(w => w.code === 'BRANCH_WITHOUT_ASSIGNMENT' && w.field.includes('ask_estado'))).toBe(false)
+  })
+})
+
+describe('flowWarnings', () => {
+  it('devuelve sólo los issues con severity warning (BRANCH_WITHOUT_ASSIGNMENT)', () => {
+    const flow = validFlow() // welcome -> closing sin asignación → warning
+    const warns = flowWarnings(flow)
+    expect(warns.length).toBeGreaterThan(0)
+    expect(warns.some((w) => w.code === 'BRANCH_WITHOUT_ASSIGNMENT')).toBe(true)
+    expect(warns.every((w) => w.severity === 'warning')).toBe(true)
+  })
+
+  it('devuelve [] cuando todas las ramas tienen asignación', () => {
+    const flow = validFlow()
+    ;(flow.nodes.closing as { assignment?: unknown }).assignment = { mode: 'manual' }
+    expect(flowWarnings(flow)).toEqual([])
+  })
+
+  it('no incluye errores (sólo warnings)', () => {
+    const invalidFlow: FlowDefinition = {
+      nodes: {
+        welcome: {
+          id: 'welcome',
+          type: 'interactive_buttons',
+          body: '¿?',
+          buttons: [{ id: 'x', title: 'X' }],
+          transitions: { x: 'no_existe' },
+          onFreeText: 'reprompt',
+        },
+      },
+    }
+    const warns = flowWarnings(invalidFlow)
+    expect(warns.every((w) => w.severity === 'warning')).toBe(true)
+    expect(warns.some((w) => w.code === 'NODE_REF_NOT_FOUND')).toBe(false)
+  })
 })

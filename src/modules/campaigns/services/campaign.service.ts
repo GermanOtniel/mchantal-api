@@ -57,7 +57,7 @@ export class CampaignService {
 
     const flow = input.flowDefinition ?? EMPTY_FLOW
     if (input.flowDefinition !== undefined) {
-      const flowIssues = validateFlowDefinition(flow)
+      const flowIssues = validateFlowDefinition(flow).filter((i) => (i.severity ?? 'error') === 'error')
       if (flowIssues.length > 0) {
         throw new HttpError('Flujo inválido', 400, 'INVALID_FLOW', flowIssues)
       }
@@ -81,7 +81,7 @@ export class CampaignService {
 
   async updateCampaign(id: string, patch: UpdateCampaignData): Promise<Campaign> {
     if (patch.flowDefinition !== undefined) {
-      const issues = validateFlowDefinition(patch.flowDefinition)
+      const issues = validateFlowDefinition(patch.flowDefinition).filter((i) => (i.severity ?? 'error') === 'error')
       if (issues.length > 0) {
         throw new HttpError('Flujo inválido', 400, 'INVALID_FLOW', issues)
       }

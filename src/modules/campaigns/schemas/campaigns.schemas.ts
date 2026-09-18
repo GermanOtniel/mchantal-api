@@ -3,6 +3,14 @@ import { Type } from '@sinclair/typebox'
 /** flowDefinition es jsonb suelto; la validacion estructural la hace el servicio. */
 export const FlowDefinitionSchema = Type.Record(Type.String(), Type.Unknown())
 
+/** Avisos no bloqueantes de validación del flujo (severity 'warning'). */
+export const FlowWarningSchema = Type.Object({
+  field: Type.String(),
+  code: Type.String(),
+  message: Type.String(),
+  severity: Type.Optional(Type.String()),
+})
+
 export const CampaignResponseSchema = Type.Object({
   id: Type.String(),
   slug: Type.String(),
@@ -12,6 +20,7 @@ export const CampaignResponseSchema = Type.Object({
   origins: Type.Array(Type.String()),
   createdAt: Type.String(),
   updatedAt: Type.String(),
+  warnings: Type.Optional(Type.Array(FlowWarningSchema)),
 })
 
 export const CampaignListResponseSchema = Type.Object({

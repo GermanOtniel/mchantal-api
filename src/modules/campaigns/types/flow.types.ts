@@ -15,6 +15,7 @@ export type TextMessageNode = {
   type: 'text_message'
   body: string
   nextNodeId?: string
+  assignment?: AssignmentDirective
 }
 
 export type TextInputNode = {
@@ -37,10 +38,11 @@ export type FreeTextNode = {
   storeAs: string
   // Captura el texto crudo en answers[storeAs] (sin matchear) y avanza a nextNodeId (o completa si no hay).
   nextNodeId?: string
+  assignment?: AssignmentDirective
 }
 
 export type FlowNode = InteractiveButtonsNode | TextMessageNode | TextInputNode | FreeTextNode
 
 export type FlowDefinition = { nodes: Record<string, FlowNode>; entryNodeId?: string }
 
-export type ValidationIssue = { field: string; code: string; message: string }
+export type ValidationIssue = { field: string; code: string; message: string; severity?: 'error' | 'warning' }

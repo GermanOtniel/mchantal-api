@@ -3,6 +3,7 @@ import type { NormalizedMessage } from '../../../shared/whatsapp/types/inbound.t
 import type {
   FlowDefinition,
   InteractiveButtonsNode,
+  TextMessageNode,
   TextInputNode,
   FreeTextNode,
 } from '../../campaigns/types/flow.types'
@@ -158,13 +159,7 @@ export class FlowEngine {
     // Resuelve la directiva de asignación (override por categoría gana al default)
     const directive: AssignmentDirective | undefined =
       node.assignmentOverrides?.[result.categoryId] ?? node.assignment
-    if (directive) {
-      const assignmentResult = await this.deps.assignment.resolve(directive, flowState.context)
-      lead.assignmentMode = assignmentResult.mode
-      lead.assignedExecutiveId = assignmentResult.executiveId
-      lead.assignedAt = new Date()
-      await this.deps.campaignLeads.save(lead)
-    }
+    await this.maybeAssign(lead, flowState, directive)
 
     // Avanza a la transición de la categoría (override) o al defaultTransition
     const target = node.transitions[result.categoryId] ?? node.defaultTransition
@@ -209,6 +204,8 @@ export class FlowEngine {
     flowState.context = { ...flowState.context, answers }
     await this.deps.flowStates.save(flowState)
 
+    await this.maybeAssign(lead, flowState, node.assignment)
+
     if (node.nextNodeId) {
       await this.executeNode(sender, ctx, lead, flowState, node.nextNodeId)
     } else {
@@ -237,6 +234,7 @@ export class FlowEngine {
       await this.sendInteractive(sender, ctx, flowState, node)
     } else if (node.type === 'text_message') {
       await this.sendText(sender, ctx, flowState, node.body, { nodeId: node.id })
+      await this.maybeAssign(lead, flowState, (node as TextMessageNode).assignment)
       if (node.nextNodeId) {
         await this.executeNode(sender, ctx, lead, flowState, node.nextNodeId)
       } else {
@@ -248,6 +246,23 @@ export class FlowEngine {
       // text_input / free_text: envía el prompt y espera el siguiente mensaje del lead
       await this.sendText(sender, ctx, flowState, node.body, { nodeId: node.id })
     }
+  }
+
+  private async maybeAssign(
+    lead: CampaignLeadData,
+    flowState: LeadFlowStateData,
+    directive: AssignmentDirective | undefined
+  ): Promise<void> {
+    if (!directive) return
+    const ctxAssigned = (flowState.context as { assigned?: boolean }).assigned
+    if (ctxAssigned) return
+    const result = await this.deps.assignment.resolve(directive, flowState.context)
+    lead.assignmentMode = result.mode
+    lead.assignedExecutiveId = result.executiveId
+    lead.assignedAt = new Date()
+    await this.deps.campaignLeads.save(lead)
+    flowState.context = { ...flowState.context, assigned: true }
+    await this.deps.flowStates.save(flowState)
   }
 
   private async sendInteractive(

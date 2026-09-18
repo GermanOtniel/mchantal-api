@@ -781,3 +781,69 @@ describe('FlowEngine — paused no-op', () => {
     expect(extra.realtimeBus.publish).not.toHaveBeenCalled()
   })
 })
+
+describe('FlowEngine — assignment en text_message', () => {
+  it('cierre con assignment manual → asigna al llegar y marca flag', async () => {
+    const flow = demoFlow()
+    ;(flow.nodes.closing_piel as { assignment?: unknown }).assignment = { mode: 'manual' }
+    const { lead, state } = leadAndState(flow, 'ask_producto')
+    const deps = wireLead(lead, state)
+    deps.assignment = { resolve: vi.fn(async () => ({ mode: 'manual', executiveId: null })) }
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', interactiveReplyId: 'piel' }) }))
+    expect(deps.assignment.resolve).toHaveBeenCalledWith({ mode: 'manual' }, expect.anything())
+    expect(lead.assignmentMode).toBe('manual')
+    expect((state.context as { assigned?: boolean }).assigned).toBe(true)
+  })
+  it('cierre sin assignment → no asigna, flag ausente', async () => {
+    const flow = demoFlow()
+    const { lead, state } = leadAndState(flow, 'ask_producto')
+    const deps = wireLead(lead, state)
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', interactiveReplyId: 'piel' }) }))
+    expect(deps.assignment.resolve).not.toHaveBeenCalled()
+    expect((state.context as { assigned?: boolean }).assigned).toBeUndefined()
+  })
+})
+
+describe('FlowEngine — assignment en free_text', () => {
+  it('free_text con assignment → asigna al capturar', async () => {
+    const flow: FlowDefinition = { nodes: {
+      capture: { id: 'capture', type: 'free_text', body: '¿Comentario?', storeAs: 'com', assignment: { mode: 'executive', executiveId: 'e1' } },
+    } }
+    const { lead, state } = leadAndState(flow, 'capture')
+    const deps = wireLead(lead, state)
+    deps.assignment = { resolve: vi.fn(async () => ({ mode: 'executive', executiveId: 'e1' })) }
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'Hola' }) }))
+    expect(deps.assignment.resolve).toHaveBeenCalledWith({ mode: 'executive', executiveId: 'e1' }, expect.anything())
+    expect(lead.assignedExecutiveId).toBe('e1')
+    expect((state.context as { assigned?: boolean }).assigned).toBe(true)
+  })
+})
+
+describe('FlowEngine — text_input respeta flag assigned', () => {
+  it('text_input con assignment no pisa si un ancestro ya asignó (flag assigned)', async () => {
+    const flow: FlowDefinition = { nodes: {
+      welcome: { id:'welcome', type:'interactive_buttons', body:'¿?', buttons:[{id:'b1',title:'Sí'}], transitions:{ b1:'closing_intermedio' } },
+      closing_intermedio: { id:'closing_intermedio', type:'text_message', body:'Ok', nextNodeId:'ask', assignment:{ mode:'manual' } },
+      ask: { id:'ask', type:'text_input', body:'¿Estado?', storeAs:'estado', matcher:{ dictionaryId:'d1' }, transitions:{ jalisco:'closing' }, assignment:{ mode:'pool', selector:{ kind:'coverage', attribute:'states', value:'{{answers.estado}}' }, strategy:'round_robin' } },
+      closing: { id:'closing', type:'text_message', body:'Listo' },
+    } }
+    const { lead, state } = leadAndState(flow, 'welcome')
+    const deps = wireLead(lead, state)
+    deps.dictionaries = { findById: vi.fn(async () => ({ id:'d1', slug:'x', name:'x', categories:[{id:'jalisco',label:'Jalisco',aliases:['jalisco']}], isSystem:false })) }
+    let resolveCall = 0
+    deps.assignment = { resolve: vi.fn(async () => { resolveCall++; return resolveCall === 1 ? { mode:'manual', executiveId: null } : { mode:'pool', executiveId: 'e2' } }) }
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+    await engine.handleInbound(sender, ctx({ message: msg({ type:'text', interactiveReplyId:'b1' }) }))
+    expect(lead.assignmentMode).toBe('manual')
+    await engine.handleInbound(sender, ctx({ message: msg({ type:'text', text:'jalisco' }) }))
+    expect(lead.assignmentMode).toBe('manual') // no pisado por ask
+    expect(resolveCall).toBe(1) // ask no llamó a resolve (flag assigned)
+  })
+})
