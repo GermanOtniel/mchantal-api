@@ -201,6 +201,7 @@ describe('CampaignService.createCampaign — base', () => {
         origins: [],
       })
     )
+    expect(repo.findActiveBase).toHaveBeenCalled()
   })
 
   it('kind=base: lanza 409 BASE_ALREADY_EXISTS si ya hay base', async () => {

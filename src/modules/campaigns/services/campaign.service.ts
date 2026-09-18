@@ -92,7 +92,8 @@ export class CampaignService {
       throw new HttpError(
         'La campaña base requiere al menos un nodo interactivo (botones)',
         400,
-        'INVALID_FLOW'
+        'INVALID_FLOW',
+        [{ field: 'flowDefinition', code: 'BASE_NEEDS_INTERACTIVE_NODE', message: 'La campaña base requiere al menos un nodo interactivo (botones)' }]
       )
     }
 
