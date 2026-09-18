@@ -11,6 +11,9 @@ import { LeadEventsRepository } from '../leads/repositories/lead-event.repositor
 import { MatcherDictionaryRepository } from '../matcher-dictionaries/repositories/matcher-dictionary.repository'
 import { AssignmentService } from '../executives/services/assignment.service'
 import { ExecutiveRepository } from '../executives/repositories/executive.repository'
+import { CampaignRepository } from '../campaigns/repositories/campaign.repository'
+import type { BaseCampaignData, BaseCampaignPort } from '../leads/types/leads.types'
+import type { FlowDefinition } from '../campaigns/types/flow.types'
 
 let instance: ConversationService | null = null
 
@@ -29,8 +32,16 @@ export function getConversationService(): ConversationService {
     const contacts = new WhatsAppContactRepository()
     const dictionaries = new MatcherDictionaryRepository()
     const assignment = new AssignmentService(new ExecutiveRepository())
+    const campaigns: BaseCampaignPort = {
+      findActiveBase: async (): Promise<BaseCampaignData | null> => {
+        const c = await new CampaignRepository().findActiveBase()
+        if (!c) return null
+        return { id: c.id, flowDefinition: c.flowDefinition as unknown as FlowDefinition }
+      },
+    }
     const flowEngine = new FlowEngine({
       captures,
+      campaigns,
       campaignLeads,
       flowStates,
       conversations,

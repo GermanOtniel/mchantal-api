@@ -9,12 +9,13 @@ import type {
 } from '../../campaigns/types/flow.types'
 import type { AssignmentDirective } from '../../executives/types/assignment.types'
 import type {
+  BaseCampaignData,
   CampaignLeadData,
   FlowEngineDeps,
   InboundFlowContext,
   LeadFlowStateData,
 } from '../types/leads.types'
-import { FOLIO_REGEX } from './folio.service'
+import { FOLIO_REGEX, generateBaseFolio } from './folio.service'
 import { classify } from '../../matcher-dictionaries/services/classifier'
 import type { MessageRealtimePayload } from '../../whatsapp/realtime/types'
 
@@ -29,7 +30,12 @@ export class FlowEngine {
     }
 
     const conversation = await this.deps.conversations.findById(ctx.conversationId)
-    if (!conversation?.leadId) return
+    if (!conversation?.leadId) {
+      const base = await this.deps.campaigns.findActiveBase()
+      if (!base) return
+      await this.enrollInBase(sender, ctx, base)
+      return
+    }
 
     const lead = await this.deps.campaignLeads.findById(conversation.leadId)
     if (!lead) return
@@ -89,6 +95,52 @@ export class FlowEngine {
 
     await this.executeNode(sender, ctx, lead, flowState, entryNodeId)
     return true
+  }
+
+  private async enrollInBase(
+    sender: WhatsAppSender,
+    ctx: InboundFlowContext,
+    base: BaseCampaignData
+  ): Promise<void> {
+    let lead = await this.deps.campaignLeads.findByContactAndCampaign(
+      ctx.contactId,
+      base.id
+    )
+    if (!lead) {
+      lead = await this.deps.campaignLeads.create({
+        contactId: ctx.contactId,
+        campaignId: base.id,
+        context: { folio: generateBaseFolio(), answers: {} },
+        origin: 'unknown',
+      })
+      await this.deps.leadEvents?.record({
+        leadId: lead.id,
+        type: 'enrolled',
+        fromValue: null,
+        toValue: null,
+        reason: 'base_campaign',
+        milestoneKind: null,
+        actorUserId: null,
+      })
+    }
+
+    await this.deps.conversations.setLead(ctx.conversationId, lead.id)
+
+    const entryNodeId = findFirstInteractiveNode(base.flowDefinition)
+    if (!entryNodeId) return
+
+    let flowState = await this.deps.flowStates.findByCampaignLeadId(lead.id)
+    if (!flowState) {
+      flowState = await this.deps.flowStates.create({
+        campaignLeadId: lead.id,
+        currentNodeId: entryNodeId,
+        context: lead.context,
+        status: 'active',
+        lastInteractionAt: new Date(),
+      })
+    }
+
+    await this.executeNode(sender, ctx, lead, flowState, entryNodeId)
   }
 
   private async processFlowInput(

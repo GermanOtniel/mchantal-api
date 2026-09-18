@@ -76,6 +76,7 @@ function makeSender(): { sender: WhatsAppSender; sent: { kind: 'text' | 'buttons
 function makeDeps(over: Partial<FlowEngineDeps> = {}): FlowEngineDeps {
   return {
     captures: { findPendingByFolio: vi.fn(async () => null), markMatched: vi.fn(async () => {}) },
+    campaigns: { findActiveBase: vi.fn(async () => null) },
     campaignLeads: {
       findByContactAndCampaign: vi.fn(async () => null),
       create: vi.fn(async (d) => ({
@@ -845,5 +846,157 @@ describe('FlowEngine — text_input respeta flag assigned', () => {
     await engine.handleInbound(sender, ctx({ message: msg({ type:'text', text:'jalisco' }) }))
     expect(lead.assignmentMode).toBe('manual') // no pisado por ask
     expect(resolveCall).toBe(1) // ask no llamó a resolve (flag assigned)
+  })
+})
+
+function baseFlow(): FlowDefinition {
+  return {
+    nodes: {
+      welcome: {
+        id: 'welcome',
+        type: 'interactive_buttons',
+        body: 'Hola, no detectamos tu folio. ¿Te ayudo?',
+        buttons: [{ id: 'si', title: 'Sí' }, { id: 'no', title: 'No' }],
+        transitions: { si: 'closing', no: 'closing' },
+        onFreeText: 'reprompt',
+      },
+      closing: { id: 'closing', type: 'text_message', body: '¡Gracias!' },
+    },
+  }
+}
+
+describe('FlowEngine — campaña base (orphans)', () => {
+  it('sin folio + base configurada: enrola en base, envía nodo de entrada', async () => {
+    const deps = makeDeps({
+      campaigns: { findActiveBase: vi.fn(async () => ({ id: 'base1', flowDefinition: baseFlow() })) },
+      conversations: { findById: vi.fn(async () => null), setLead: vi.fn(async () => {}), touchLastMessage: vi.fn(async () => {}) },
+      campaignLeads: {
+        findByContactAndCampaign: vi.fn(async () => null),
+        create: vi.fn(async (d) => ({
+          id: 'leadB', contactId: d.contactId, campaignId: d.campaignId,
+          campaign: { id: d.campaignId, flowDefinition: baseFlow() },
+          context: d.context, origin: d.origin ?? 'unknown',
+        })),
+        findById: vi.fn(async () => null),
+        save: vi.fn(async (l) => l),
+      },
+      leadEvents: { record: vi.fn(async () => ({})) } as never,
+    })
+    const { sender, sent } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'hola' }) }))
+
+    expect(deps.campaigns.findActiveBase).toHaveBeenCalled()
+    expect(deps.campaignLeads.create).toHaveBeenCalledWith(
+      expect.objectContaining({ contactId: 'ct1', campaignId: 'base1', context: expect.objectContaining({ answers: {} }) })
+    )
+    const createdArg = (deps.campaignLeads.create as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(createdArg.context.folio).toMatch(/^B-/)
+    expect(deps.conversations.setLead).toHaveBeenCalledWith('conv1', 'leadB')
+    expect(deps.flowStates.create).toHaveBeenCalledWith(
+      expect.objectContaining({ campaignLeadId: 'leadB', currentNodeId: 'welcome', status: 'active' })
+    )
+    expect(sender.sendInteractiveButtons).toHaveBeenCalledWith(
+      expect.objectContaining({ toWaId: '12345', body: 'Hola, no detectamos tu folio. ¿Te ayudo?' })
+    )
+    expect(sent).toHaveLength(1)
+  })
+
+  it('folio presente pero sin captura + base: enrola en base', async () => {
+    const deps = makeDeps({
+      campaigns: { findActiveBase: vi.fn(async () => ({ id: 'base1', flowDefinition: baseFlow() })) },
+      conversations: { findById: vi.fn(async () => null), setLead: vi.fn(async () => {}), touchLastMessage: vi.fn(async () => {}) },
+      campaignLeads: {
+        findByContactAndCampaign: vi.fn(async () => null),
+        create: vi.fn(async (d) => ({ id: 'leadB', contactId: d.contactId, campaignId: d.campaignId, campaign: { id: d.campaignId, flowDefinition: baseFlow() }, context: d.context, origin: 'unknown' })),
+        findById: vi.fn(async () => null),
+        save: vi.fn(async (l) => l),
+      },
+      leadEvents: { record: vi.fn(async () => ({})) } as never,
+    })
+    const { sender, sent } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: `mi folio es ${FOLIO}` }) }))
+
+    expect(deps.captures.findPendingByFolio).toHaveBeenCalledWith(FOLIO)
+    expect(deps.campaignLeads.create).toHaveBeenCalledWith(expect.objectContaining({ campaignId: 'base1' }))
+    expect(sent).toHaveLength(1)
+  })
+
+  it('sin base configurada: silencioso (no crea lead, no envía)', async () => {
+    const deps = makeDeps({
+      campaigns: { findActiveBase: vi.fn(async () => null) },
+      conversations: { findById: vi.fn(async () => null), setLead: vi.fn(async () => {}), touchLastMessage: vi.fn(async () => {}) },
+    })
+    const { sender, sent } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'hola' }) }))
+
+    expect(deps.campaignLeads.create).not.toHaveBeenCalled()
+    expect(deps.conversations.setLead).not.toHaveBeenCalled()
+    expect(sender.sendInteractiveButtons).not.toHaveBeenCalled()
+    expect(sent).toHaveLength(0)
+  })
+
+  it('contacto con lead existente (conversation.leadId seteado): no invoca findActiveBase', async () => {
+    const flow = demoFlow()
+    const lead: CampaignLeadData = {
+      id: 'lead1', contactId: 'ct1', campaignId: 'camp1',
+      campaign: { id: 'camp1', flowDefinition: flow },
+      context: { folio: FOLIO, answers: {} },
+    }
+    const deps = makeDeps({
+      campaigns: { findActiveBase: vi.fn(async () => ({ id: 'base1', flowDefinition: baseFlow() })) },
+      conversations: { findById: vi.fn(async () => ({ id: 'conv1', contactId: 'ct1', contactWaId: '', status: 'open', leadId: 'lead1' }) as ConversationData), setLead: vi.fn(async () => {}), touchLastMessage: vi.fn(async () => {}) },
+      campaignLeads: {
+        findByContactAndCampaign: vi.fn(async () => null),
+        create: vi.fn(async () => lead),
+        findById: vi.fn(async () => lead),
+        save: vi.fn(async (l) => l),
+      },
+      flowStates: {
+        findActiveByCampaignLeadId: vi.fn(async () => null),
+        findByCampaignLeadId: vi.fn(async () => null),
+        create: vi.fn(async (d) => ({ id: 'fs1', completedAt: null, ...d })),
+        save: vi.fn(async (s) => s),
+      },
+    })
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'hola' }) }))
+
+    expect(deps.campaigns.findActiveBase).not.toHaveBeenCalled()
+    expect(deps.campaignLeads.create).not.toHaveBeenCalled()
+  })
+
+  it('re-engagement: contacto ya enrolado en base reusa campaign_lead (no crea folio nuevo)', async () => {
+    const existingLead: CampaignLeadData = {
+      id: 'leadB', contactId: 'ct1', campaignId: 'base1',
+      campaign: { id: 'base1', flowDefinition: baseFlow() },
+      context: { folio: 'B-OLD01', answers: {} },
+    }
+    const deps = makeDeps({
+      campaigns: { findActiveBase: vi.fn(async () => ({ id: 'base1', flowDefinition: baseFlow() })) },
+      conversations: { findById: vi.fn(async () => null), setLead: vi.fn(async () => {}), touchLastMessage: vi.fn(async () => {}) },
+      campaignLeads: {
+        findByContactAndCampaign: vi.fn(async () => existingLead),
+        create: vi.fn(async () => { throw new Error('no debe crear') }),
+        findById: vi.fn(async () => null),
+        save: vi.fn(async (l) => l),
+      },
+      leadEvents: { record: vi.fn(async () => ({})) } as never,
+    })
+    const { sender, sent } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'hola' }) }))
+
+    expect(deps.campaignLeads.create).not.toHaveBeenCalled()
+    expect(deps.conversations.setLead).toHaveBeenCalledWith('conv1', 'leadB')
+    expect(sent).toHaveLength(1)
   })
 })

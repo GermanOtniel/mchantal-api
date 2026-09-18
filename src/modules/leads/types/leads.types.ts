@@ -162,8 +162,15 @@ export interface AssignmentResolverPort {
   resolve(directive: AssignmentDirective, leadContext: LeadAssignmentContext): Promise<AssignmentResult>
 }
 
+export type BaseCampaignData = { id: string; flowDefinition: FlowDefinition }
+
+export interface BaseCampaignPort {
+  findActiveBase(): Promise<BaseCampaignData | null>
+}
+
 export type FlowEngineDeps = {
   captures: LeadCaptureRepositoryPort
+  campaigns: BaseCampaignPort
   campaignLeads: CampaignLeadRepositoryPort
   flowStates: LeadFlowStateRepositoryPort
   conversations: WhatsAppConversationRepositoryPort
