@@ -725,6 +725,23 @@ describe('LeadsService.getLead', () => {
     const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
     expect(res.siblings).toEqual([])
   })
+
+  it('scoped user (sin LEADS_READ_ALL) viendo su propio lead: devuelve siblings y excluye su userId', async () => {
+    const leadsRepo = mkLeadsRepo({
+      findById: vi.fn(async () => leadData({ assignedExecutiveId: 'u1' })),
+      findOpenSiblingsByContactId: vi.fn(async () => [
+        { campaignName: 'Campaña B', assignedExecutiveName: 'Otro Ejec' },
+      ]),
+    })
+    const svc = mkSvc({ leadsRepo })
+    const res = await svc.getLead({
+      permissions: perms(PERMISSIONS.LEADS_ATTEND), // sin LEADS_READ_ALL
+      userId: 'u1',
+      leadId: 'l1',
+    })
+    expect(leadsRepo.findOpenSiblingsByContactId).toHaveBeenCalledWith('ct', 'l1', 'u1')
+    expect(res.siblings).toEqual([{ campaignName: 'Campaña B', assignedExecutiveName: 'Otro Ejec' }])
+  })
 })
 // ── getTimeline ──
 
