@@ -106,6 +106,10 @@ export interface CampaignLeadRepositoryPort {
     contactId: string,
     assigneeUserId: string
   ): Promise<boolean>
+  findTerminalByContactId(
+    contactId: string,
+    excludeLeadId: string
+  ): Promise<CampaignLeadData[]>
 }
 
 export type LeadListItem = {

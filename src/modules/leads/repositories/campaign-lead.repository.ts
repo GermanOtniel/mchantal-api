@@ -1,3 +1,4 @@
+import { In } from 'typeorm'
 import { AppDataSource } from '../../../database/data-source'
 import { CampaignLead } from '../../../entities/leads/campaign-lead.entity'
 import type { FlowDefinition } from '../../campaigns/types/flow.types'
@@ -190,5 +191,16 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
       select: ['id'],
     })
     return Boolean(found)
+  }
+
+  async findTerminalByContactId(
+    contactId: string,
+    excludeLeadId: string
+  ): Promise<CampaignLeadData[]> {
+    const leads = await this.repo.find({
+      where: { contactId, status: In(['qualified', 'disqualified']) },
+      relations: ['campaign'],
+    })
+    return leads.filter((l) => l.id !== excludeLeadId).map(toData)
   }
 }
