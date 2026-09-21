@@ -24,31 +24,64 @@ export class FlowEngine {
 
   async handleInbound(sender: WhatsAppSender, ctx: InboundFlowContext): Promise<void> {
     const folio = extractFolio(ctx.message)
+    console.log('[TRACE reengage] handleInbound start', JSON.stringify({
+      conversationId: ctx.conversationId,
+      msgType: ctx.message.type,
+      msgText: (ctx.message.text ?? '').slice(0, 60),
+      folio,
+      reengageWindowHours: this.deps.reengageWindowHours,
+    }))
     if (folio) {
       const enrolled = await this.enrollFromFolio(sender, ctx, folio)
+      console.log('[TRACE reengage] enrollFromFolio', { folio, enrolled })
       if (enrolled) return
     }
 
     const conversation = await this.deps.conversations.findById(ctx.conversationId)
+    console.log('[TRACE reengage] conversation', JSON.stringify({
+      conversationId: conversation?.id,
+      leadId: conversation?.leadId ?? null,
+      status: conversation?.status,
+    }))
     if (!conversation?.leadId) {
       const base = await this.deps.campaigns.findActiveBase()
+      console.log('[TRACE reengage] path B (no leadId on conv) findActiveBase', { baseId: base?.id ?? null })
       if (!base) return
       await this.enrollInBase(sender, ctx, base)
       return
     }
 
     const lead = await this.deps.campaignLeads.findById(conversation.leadId)
+    console.log('[TRACE reengage] lead on conversation', JSON.stringify({
+      leadId: lead?.id ?? null,
+      leadStatus: lead?.status ?? null,
+      campaignId: lead?.campaignId ?? null,
+      enrolledAt: lead?.enrolledAt ?? null,
+    }))
     if (!lead) return
 
     const flowState = await this.deps.flowStates.findByCampaignLeadId(lead.id)
-    if (this.shouldReengage(lead, flowState)) {
+    const reengage = this.shouldReengage(lead, flowState)
+    console.log('[TRACE reengage] shouldReengage', JSON.stringify({
+      reengage,
+      leadStatus: lead.status,
+      flowStateStatus: flowState?.status ?? null,
+      flowStateLastInteractionAt: flowState?.lastInteractionAt ?? null,
+      leadEnrolledAt: lead.enrolledAt,
+      windowMs: this.deps.reengageWindowHours * 60 * 60 * 1000,
+    }))
+    if (reengage) {
       const base = await this.deps.campaigns.findActiveBase()
+      console.log('[TRACE reengage] path A (reengage) findActiveBase', { baseId: base?.id ?? null })
       if (!base) return
       await this.enrollInBase(sender, ctx, base)
       return
     }
 
-    if (!flowState || flowState.status !== 'active') return
+    if (!flowState || flowState.status !== 'active') {
+      console.log('[TRACE reengage] silent return (flow not active)', { flowStateStatus: flowState?.status ?? null })
+      return
+    }
     await this.processFlowInput(sender, ctx, lead, flowState)
   }
 
@@ -145,16 +178,30 @@ export class FlowEngine {
     await this.deps.conversations.setLead(ctx.conversationId, lead.id)
 
     const entryNodeId = findFirstInteractiveNode(base.flowDefinition)
+    console.log('[TRACE reengage] enrollInBase', JSON.stringify({
+      leadId: lead.id,
+      campaignId: base.id,
+      entryNodeId,
+      flowNodeKeys: Object.keys(base.flowDefinition?.nodes ?? {}),
+    }))
     if (!entryNodeId) return
     await this.startOrRestartFlow(sender, ctx, lead, entryNodeId)
   }
 
   private shouldReengage(lead: CampaignLeadData, flowState: LeadFlowStateData | null): boolean {
-    if (lead.status !== 'qualified' && lead.status !== 'disqualified') return false
-    if (flowState?.status === 'paused') return false
+    if (lead.status !== 'qualified' && lead.status !== 'disqualified') {
+      console.log('[TRACE reengage] shouldReengage=false (status not qualified/disqualified)', { leadStatus: lead.status })
+      return false
+    }
+    if (flowState?.status === 'paused') {
+      console.log('[TRACE reengage] shouldReengage=false (flow paused)')
+      return false
+    }
     const lastInteraction = flowState?.lastInteractionAt ?? lead.enrolledAt
     const windowMs = this.deps.reengageWindowHours * 60 * 60 * 1000
-    return Date.now() - lastInteraction.getTime() > windowMs
+    const elapsed = Date.now() - lastInteraction.getTime()
+    console.log('[TRACE reengage] shouldReengage window check', { elapsedMs: elapsed, windowMs, passes: elapsed > windowMs })
+    return elapsed > windowMs
   }
 
   private async processFlowInput(
