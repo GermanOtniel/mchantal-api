@@ -322,4 +322,5 @@ export type LeadEventResponse = {
 export interface LeadEventsRepositoryPort {
   record(data: Omit<LeadEventData, 'id' | 'createdAt'> & { createdAt?: Date }): Promise<LeadEventData>
   listByLead(leadId: string): Promise<LeadEventData[]>
+  findLatestStatusChangeLeadId(leadIds: string[]): Promise<string | null>
 }

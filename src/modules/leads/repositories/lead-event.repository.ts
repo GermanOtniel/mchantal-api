@@ -46,4 +46,19 @@ export class LeadEventsRepository implements LeadEventsRepositoryPort {
     })
     return rows.map(toData)
   }
+
+  async findLatestStatusChangeLeadId(leadIds: string[]): Promise<string | null> {
+    if (leadIds.length === 0) return null
+    const row = await this.repo
+      .createQueryBuilder('e')
+      .select('e.lead_id', 'leadId')
+      .addSelect('MAX(e.created_at)', 'latest')
+      .where('e.type = :type', { type: 'status_change' })
+      .andWhere('e.lead_id IN (:...leadIds)', { leadIds })
+      .groupBy('e.lead_id')
+      .orderBy('latest', 'DESC')
+      .limit(1)
+      .getRawOne<{ leadId: string }>()
+    return row?.leadId ?? null
+  }
 }
