@@ -110,6 +110,11 @@ export interface CampaignLeadRepositoryPort {
     contactId: string,
     excludeLeadId: string
   ): Promise<CampaignLeadData[]>
+  findOpenSiblingsByContactId(
+    contactId: string,
+    excludeLeadId: string,
+    excludeAssigneeUserId: string
+  ): Promise<{ campaignName: string; assignedExecutiveName: string }[]>
 }
 
 export type LeadListItem = {

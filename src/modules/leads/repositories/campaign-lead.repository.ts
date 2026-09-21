@@ -203,4 +203,31 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
     })
     return leads.filter((l) => l.id !== excludeLeadId).map(toData)
   }
+
+  async findOpenSiblingsByContactId(
+    contactId: string,
+    excludeLeadId: string,
+    excludeAssigneeUserId: string
+  ): Promise<{ campaignName: string; assignedExecutiveName: string }[]> {
+    const rows = await this.repo
+      .createQueryBuilder('cl')
+      .select('campaign.name', 'campaignName')
+      .addSelect('executive.full_name', 'assignedExecutiveName')
+      .leftJoin('campaigns', 'campaign', 'campaign.id = cl.campaign_id')
+      .leftJoin('users', 'executive', 'executive.id = cl.assigned_executive_id')
+      .where('cl.contact_id = :contactId', { contactId })
+      .andWhere('cl.id != :excludeLeadId', { excludeLeadId })
+      .andWhere('cl.status IN (:...statuses)', {
+        statuses: ['new', 'in_progress', 'on_hold'],
+      })
+      .andWhere('cl.assigned_executive_id IS NOT NULL')
+      .andWhere('cl.assigned_executive_id != :excludeAssigneeUserId', {
+        excludeAssigneeUserId,
+      })
+      .getRawMany<{ campaignName: string; assignedExecutiveName: string }>()
+    return rows.map((r) => ({
+      campaignName: r.campaignName,
+      assignedExecutiveName: r.assignedExecutiveName,
+    }))
+  }
 }
