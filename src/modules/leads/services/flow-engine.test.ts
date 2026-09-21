@@ -1336,4 +1336,105 @@ describe('FlowEngine — re-engagement via lead hermano (multi-lead)', () => {
     expect(deps.campaigns.findActiveBase).toHaveBeenCalled()
     expect(sent).toHaveLength(1)
   })
+
+  it('lead conversación new+ACTIVE + hermano disqualified frío → NO escanea (processFlowInput)', async () => {
+    const deps = coldReengageDeps({
+      campaignLeads: {
+        findByContactAndCampaign: vi.fn(async () => null),
+        create: vi.fn(async (d) => ({ id: 'leadB', contactId: d.contactId, campaignId: d.campaignId, campaign: { id: d.campaignId, flowDefinition: baseFlow() }, context: d.context, origin: 'unknown', status: 'new', enrolledAt: new Date(), assignmentMode: null, assignedExecutiveId: null, assignedAt: null })),
+        findById: vi.fn(async () => existingLead({ status: 'new' })),
+        findTerminalByContactId: vi.fn(async () => [siblingLead({ status: 'disqualified' })]),
+        save: vi.fn(async (l) => l),
+      },
+      flowStates: {
+        findActiveByCampaignLeadId: vi.fn(async () => null),
+        findByCampaignLeadId: vi.fn(async (id: string) => id === 'leadX' ? { ...completedState(), status: 'active' as const } : siblingColdCompleted()),
+        create: vi.fn(async (d) => ({ id: 'fsB', completedAt: null, ...d })),
+        save: vi.fn(async (s) => s),
+      },
+    })
+    const { sender, sent } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'comprar' }) }))
+
+    expect(deps.campaignLeads.findTerminalByContactId).not.toHaveBeenCalled()
+    expect(deps.campaigns.findActiveBase).not.toHaveBeenCalled()
+  })
+
+  it('lead conversación paused + hermano disqualified frío → NO escanea (respeta agente manual)', async () => {
+    const deps = coldReengageDeps({
+      campaignLeads: {
+        findByContactAndCampaign: vi.fn(async () => null),
+        create: vi.fn(async (d) => ({ id: 'leadB', contactId: d.contactId, campaignId: d.campaignId, campaign: { id: d.campaignId, flowDefinition: baseFlow() }, context: d.context, origin: 'unknown', status: 'new', enrolledAt: new Date(), assignmentMode: null, assignedExecutiveId: null, assignedAt: null })),
+        findById: vi.fn(async () => existingLead({ status: 'in_progress' })),
+        findTerminalByContactId: vi.fn(async () => [siblingLead({ status: 'disqualified' })]),
+        save: vi.fn(async (l) => l),
+      },
+      flowStates: {
+        findActiveByCampaignLeadId: vi.fn(async () => null),
+        findByCampaignLeadId: vi.fn(async (id: string) => id === 'leadX' ? { ...completedState(), status: 'paused' as const } : siblingColdCompleted()),
+        create: vi.fn(async (d) => ({ id: 'fsB', completedAt: null, ...d })),
+        save: vi.fn(async (s) => s),
+      },
+    })
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'hola' }) }))
+
+    expect(deps.campaignLeads.findTerminalByContactId).not.toHaveBeenCalled()
+    expect(deps.campaigns.findActiveBase).not.toHaveBeenCalled()
+  })
+
+  it('hermano disqualified DENTRO de ventana (no frío) → NO re-engage', async () => {
+    const recent = new Date(Date.now() - 1 * 3600 * 1000)
+    const deps = coldReengageDeps({
+      campaignLeads: {
+        findByContactAndCampaign: vi.fn(async () => null),
+        create: vi.fn(async (d) => ({ id: 'leadB', contactId: d.contactId, campaignId: d.campaignId, campaign: { id: d.campaignId, flowDefinition: baseFlow() }, context: d.context, origin: 'unknown', status: 'new', enrolledAt: new Date(), assignmentMode: null, assignedExecutiveId: null, assignedAt: null })),
+        findById: vi.fn(async () => existingLead({ status: 'new' })),
+        findTerminalByContactId: vi.fn(async () => [siblingLead({ status: 'disqualified' })]),
+        save: vi.fn(async (l) => l),
+      },
+      flowStates: {
+        findActiveByCampaignLeadId: vi.fn(async () => null),
+        findByCampaignLeadId: vi.fn(async (id: string) => id === 'leadX' ? completedState() : { ...siblingColdCompleted(), lastInteractionAt: recent }),
+        create: vi.fn(async (d) => ({ id: 'fsB', completedAt: null, ...d })),
+        save: vi.fn(async (s) => s),
+      },
+    })
+    const { sender, sent } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'hola' }) }))
+
+    expect(deps.campaigns.findActiveBase).not.toHaveBeenCalled()
+    expect(sent).toHaveLength(0)
+  })
+
+  it('hermano disqualified frío pero flowState hermano paused → NO re-engage', async () => {
+    const deps = coldReengageDeps({
+      campaignLeads: {
+        findByContactAndCampaign: vi.fn(async () => null),
+        create: vi.fn(async (d) => ({ id: 'leadB', contactId: d.contactId, campaignId: d.campaignId, campaign: { id: d.campaignId, flowDefinition: baseFlow() }, context: d.context, origin: 'unknown', status: 'new', enrolledAt: new Date(), assignmentMode: null, assignedExecutiveId: null, assignedAt: null })),
+        findById: vi.fn(async () => existingLead({ status: 'new' })),
+        findTerminalByContactId: vi.fn(async () => [siblingLead({ status: 'disqualified' })]),
+        save: vi.fn(async (l) => l),
+      },
+      flowStates: {
+        findActiveByCampaignLeadId: vi.fn(async () => null),
+        findByCampaignLeadId: vi.fn(async (id: string) => id === 'leadX' ? completedState() : { ...siblingColdCompleted(), status: 'paused' as const }),
+        create: vi.fn(async (d) => ({ id: 'fsB', completedAt: null, ...d })),
+        save: vi.fn(async (s) => s),
+      },
+    })
+    const { sender, sent } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'hola' }) }))
+
+    expect(deps.campaigns.findActiveBase).not.toHaveBeenCalled()
+    expect(sent).toHaveLength(0)
+  })
 })
