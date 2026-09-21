@@ -198,13 +198,9 @@ Tests en `flow-engine.test.ts` (extienden los de re-engagement "trigger 3").
 8. Un solo hermano elegible → `findLatestStatusChangeLeadId` **no** se llama.
 
 **Robustez a folio futuro:**
-9. Test de integración del flujo completo: folio nuevo crea lead3 `new` + rebindexa conversación → luego mensaje sin folio + hermano `disqualified` frío → re-engage a base.
+9. Simulación del flujo completo en un solo test de flow-engine (mockeando las llamadas secuenciales): folio nuevo crea lead3 `new` + `setLead` rebindexa conversación → luego mensaje sin folio con `findById` devolviendo lead3 + `findTerminalByContactId` devolviendo hermano `disqualified` frío → re-engage a base.
 
-**Repo (sus propios test files):**
-- `campaign-lead.repository.test.ts`: `findTerminalByContactId` devuelve solo `qualified|disqualified`, excluye el lead indicado, trae `flowState`.
-- `lead-event.repository.test.ts`: `findLatestStatusChangeLeadId` devuelve el lead con el status_change más reciente; `null` si ninguno.
-
-**Mock boundary:** en tests de flow-engine, `findTerminalByContactId` y `findLatestStatusChangeLeadId` se mockean como el resto de deps. Los tests de repo usan la DB real (patrón existente).
+**Repo methods:** el codebase **no** tiene infra de DB para tests de repo (todos los tests son de servicio con deps mockeadas; el único `*.repository.test.ts` existente es de funciones puras). Los métodos nuevos (`findTerminalByContactId`, `findLatestStatusChangeLeadId`) se **mockean** en los tests de flow-engine y `leads.service.test.ts`, igual que el resto de deps. Su SQL (thin) se verifica manualmente contra prod/staging. No se introduce infra de DB test en este cambio (YAGNI).
 
 ## Sección 4 — Aviso de coordinación en el CRM
 
