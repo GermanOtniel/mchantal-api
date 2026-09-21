@@ -254,6 +254,12 @@ export class LeadsService {
       if (exec) assignedExecutive = { id: exec.id, fullName: exec.fullName }
     }
 
+    const siblings = await this.campaignLeads.findOpenSiblingsByContactId(
+      lead.contactId,
+      leadId,
+      userId
+    )
+
     return {
       id: lead.id,
       folio: lead.context.folio ?? null,
@@ -267,6 +273,7 @@ export class LeadsService {
       flowState: flowState?.status ?? null,
       conversationId: conversation?.id ?? null,
       answers: qa,
+      siblings,
     }
   }
 

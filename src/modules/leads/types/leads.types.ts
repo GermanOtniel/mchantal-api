@@ -298,6 +298,7 @@ export type LeadDetailResponse = {
   flowState: 'active' | 'paused' | 'completed' | null
   conversationId: string | null
   answers: LeadQAItem[]
+  siblings: { campaignName: string; assignedExecutiveName: string }[]
 }
 
 export type LeadEventData = {
