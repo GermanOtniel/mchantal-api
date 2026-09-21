@@ -9,12 +9,13 @@ import type {
 } from '../../campaigns/types/flow.types'
 import type { AssignmentDirective } from '../../executives/types/assignment.types'
 import type {
+  BaseCampaignData,
   CampaignLeadData,
   FlowEngineDeps,
   InboundFlowContext,
   LeadFlowStateData,
 } from '../types/leads.types'
-import { FOLIO_REGEX } from './folio.service'
+import { FOLIO_REGEX, generateBaseFolio } from './folio.service'
 import { classify } from '../../matcher-dictionaries/services/classifier'
 import type { MessageRealtimePayload } from '../../whatsapp/realtime/types'
 
@@ -29,14 +30,25 @@ export class FlowEngine {
     }
 
     const conversation = await this.deps.conversations.findById(ctx.conversationId)
-    if (!conversation?.leadId) return
+    if (!conversation?.leadId) {
+      const base = await this.deps.campaigns.findActiveBase()
+      if (!base) return
+      await this.enrollInBase(sender, ctx, base)
+      return
+    }
 
     const lead = await this.deps.campaignLeads.findById(conversation.leadId)
     if (!lead) return
 
-    const flowState = await this.deps.flowStates.findActiveByCampaignLeadId(lead.id)
-    if (!flowState) return
+    const flowState = await this.deps.flowStates.findByCampaignLeadId(lead.id)
+    if (this.shouldReengage(lead, flowState)) {
+      const base = await this.deps.campaigns.findActiveBase()
+      if (!base) return
+      await this.enrollInBase(sender, ctx, base)
+      return
+    }
 
+    if (!flowState || flowState.status !== 'active') return
     await this.processFlowInput(sender, ctx, lead, flowState)
   }
 
@@ -75,7 +87,16 @@ export class FlowEngine {
 
     const entryNodeId = findFirstInteractiveNode(capture.campaign.flowDefinition)
     if (!entryNodeId) return true
+    await this.startOrRestartFlow(sender, ctx, lead, entryNodeId)
+    return true
+  }
 
+  private async startOrRestartFlow(
+    sender: WhatsAppSender,
+    ctx: InboundFlowContext,
+    lead: CampaignLeadData,
+    entryNodeId: string
+  ): Promise<void> {
     let flowState = await this.deps.flowStates.findByCampaignLeadId(lead.id)
     if (!flowState) {
       flowState = await this.deps.flowStates.create({
@@ -85,10 +106,55 @@ export class FlowEngine {
         status: 'active',
         lastInteractionAt: new Date(),
       })
+    } else if (flowState.status !== 'active') {
+      // Re-engagement: reset a active y limpia completedAt. executeNode seteará currentNodeId=entry y lastInteractionAt.
+      flowState.status = 'active'
+      flowState.completedAt = null
+      await this.deps.flowStates.save(flowState)
+    }
+    await this.executeNode(sender, ctx, lead, flowState, entryNodeId)
+  }
+
+  private async enrollInBase(
+    sender: WhatsAppSender,
+    ctx: InboundFlowContext,
+    base: BaseCampaignData
+  ): Promise<void> {
+    let lead = await this.deps.campaignLeads.findByContactAndCampaign(
+      ctx.contactId,
+      base.id
+    )
+    if (!lead) {
+      lead = await this.deps.campaignLeads.create({
+        contactId: ctx.contactId,
+        campaignId: base.id,
+        context: { folio: generateBaseFolio(), answers: {} },
+        origin: 'unknown',
+      })
+      await this.deps.leadEvents?.record({
+        leadId: lead.id,
+        type: 'enrolled',
+        fromValue: null,
+        toValue: null,
+        reason: 'base_campaign',
+        milestoneKind: null,
+        actorUserId: null,
+      })
     }
 
-    await this.executeNode(sender, ctx, lead, flowState, entryNodeId)
-    return true
+    await this.deps.conversations.setLead(ctx.conversationId, lead.id)
+
+    const entryNodeId = findFirstInteractiveNode(base.flowDefinition)
+    if (!entryNodeId) return
+    await this.startOrRestartFlow(sender, ctx, lead, entryNodeId)
+  }
+
+  private shouldReengage(lead: CampaignLeadData, flowState: LeadFlowStateData | null): boolean {
+    if (lead.status !== 'qualified' && lead.status !== 'disqualified') return false
+    if (flowState?.status === 'paused') return false
+    const lastInteraction = flowState?.lastInteractionAt ?? lead.enrolledAt
+    const windowMs = this.deps.reengageWindowHours * 60 * 60 * 1000
+    return Date.now() - lastInteraction.getTime() > windowMs
   }
 
   private async processFlowInput(

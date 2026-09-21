@@ -1,5 +1,6 @@
 import { ConversationService } from './services/conversation.service'
 import { getRealtimeBus } from './realtime'
+import { getEnv } from '../../config/env'
 import { WhatsAppContactRepository } from './repositories/whatsapp-contact.repository'
 import { WhatsAppConversationRepository } from './repositories/whatsapp-conversation.repository'
 import { WhatsAppMessageRepository } from './repositories/whatsapp-message.repository'
@@ -11,6 +12,9 @@ import { LeadEventsRepository } from '../leads/repositories/lead-event.repositor
 import { MatcherDictionaryRepository } from '../matcher-dictionaries/repositories/matcher-dictionary.repository'
 import { AssignmentService } from '../executives/services/assignment.service'
 import { ExecutiveRepository } from '../executives/repositories/executive.repository'
+import { CampaignRepository } from '../campaigns/repositories/campaign.repository'
+import type { BaseCampaignData, BaseCampaignPort } from '../leads/types/leads.types'
+import type { FlowDefinition } from '../campaigns/types/flow.types'
 
 let instance: ConversationService | null = null
 
@@ -29,8 +33,18 @@ export function getConversationService(): ConversationService {
     const contacts = new WhatsAppContactRepository()
     const dictionaries = new MatcherDictionaryRepository()
     const assignment = new AssignmentService(new ExecutiveRepository())
+    const campaignRepo = new CampaignRepository()
+    const campaigns: BaseCampaignPort = {
+      findActiveBase: async (): Promise<BaseCampaignData | null> => {
+        const c = await campaignRepo.findActiveBase()
+        if (!c) return null
+        return { id: c.id, flowDefinition: c.flowDefinition as unknown as FlowDefinition }
+      },
+    }
     const flowEngine = new FlowEngine({
       captures,
+      campaigns,
+      reengageWindowHours: getEnv().flowReengageWindowHours,
       campaignLeads,
       flowStates,
       conversations,

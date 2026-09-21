@@ -16,3 +16,9 @@ export function generateFolioSuffix(): string {
 export function generateFolio(): string {
   return `${FOLIO_PREFIX}${generateFolioSuffix()}`
 }
+
+export const BASE_FOLIO_PREFIX = 'B-'
+
+export function generateBaseFolio(): string {
+  return `${BASE_FOLIO_PREFIX}${generateFolioSuffix()}`
+}

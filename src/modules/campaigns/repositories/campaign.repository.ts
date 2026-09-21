@@ -39,6 +39,10 @@ export class CampaignRepository implements CampaignRepositoryPort {
     return found.id !== exceptId
   }
 
+  async findActiveBase(): Promise<Campaign | null> {
+    return this.repo.findOne({ where: { kind: 'base' } })
+  }
+
   async findBySlug(slug: string): Promise<Campaign | null> {
     return this.repo.findOne({ where: { slug } })
   }

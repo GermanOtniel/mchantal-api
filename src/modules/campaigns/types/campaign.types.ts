@@ -7,6 +7,7 @@ export type Campaign = {
   entryMessage: string
   flowDefinition: Record<string, unknown>
   origins: string[]
+  kind: 'base' | 'normal'
   createdAt: Date
   updatedAt: Date
 }
@@ -17,6 +18,7 @@ export type CreateCampaignData = {
   entryMessage: string
   flowDefinition: Record<string, unknown>
   origins: string[]
+  kind: 'base' | 'normal'
 }
 
 export type UpdateCampaignData = Partial<
@@ -32,4 +34,5 @@ export interface CampaignRepositoryPort {
   findById(id: string): Promise<Campaign | null>
   listAll(): Promise<Campaign[]>
   slugExists(slug: string, exceptId?: string): Promise<boolean>
+  findActiveBase(): Promise<Campaign | null>
 }
