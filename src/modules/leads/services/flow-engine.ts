@@ -80,7 +80,8 @@ export class FlowEngine {
     }
     if (elegibles.length === 0) return null
     if (elegibles.length === 1) return elegibles[0]
-    const winnerId = await this.deps.leadEvents!.findLatestStatusChangeLeadId(
+    if (!this.deps.leadEvents) return elegibles[0]
+    const winnerId = await this.deps.leadEvents.findLatestStatusChangeLeadId(
       elegibles.map((l) => l.id)
     )
     return elegibles.find((l) => l.id === winnerId) ?? elegibles[0]
