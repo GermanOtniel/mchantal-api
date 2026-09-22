@@ -1,6 +1,5 @@
 import { ConversationService } from './services/conversation.service'
 import { getRealtimeBus } from './realtime'
-import { getEnv } from '../../config/env'
 import { WhatsAppContactRepository } from './repositories/whatsapp-contact.repository'
 import { WhatsAppConversationRepository } from './repositories/whatsapp-conversation.repository'
 import { WhatsAppMessageRepository } from './repositories/whatsapp-message.repository'
@@ -44,7 +43,6 @@ export function getConversationService(): ConversationService {
     const flowEngine = new FlowEngine({
       captures,
       campaigns,
-      reengageWindowHours: getEnv().flowReengageWindowHours,
       campaignLeads,
       flowStates,
       conversations,
