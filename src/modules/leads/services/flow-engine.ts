@@ -175,6 +175,22 @@ export class FlowEngine {
         milestoneKind: null,
         actorUserId: null,
       })
+    } else if (lead.status === 'disqualified') {
+      // Re-engagement: reactiva el lead descalificado para romper el loop.
+      // Un lead re-engagedado deja de ser terminal (status -> 'new') hasta que
+      // un operador lo vuelva a cerrar; así no re-dispara en cada mensaje.
+      const prevStatus = lead.status
+      lead.status = 'new'
+      lead = await this.deps.campaignLeads.save(lead)
+      await this.deps.leadEvents?.record({
+        leadId: lead.id,
+        type: 'status_change',
+        fromValue: prevStatus,
+        toValue: 'new',
+        reason: 're_engagement',
+        milestoneKind: null,
+        actorUserId: null,
+      })
     }
 
     await this.deps.conversations.setLead(ctx.conversationId, lead.id)
@@ -185,11 +201,13 @@ export class FlowEngine {
   }
 
   private shouldReengage(lead: CampaignLeadData, flowState: LeadFlowStateData | null): boolean {
-    if (lead.status !== 'qualified' && lead.status !== 'disqualified') return false
+    // Solo los leads descalificados (cerrados por un operador) re-entran al flujo
+    // automático de base. `qualified` es un buen lead en el pipeline de ventas:
+    // si escribe sin folio, lo atiende el ejecutivo (no se yanking al automation).
+    if (lead.status !== 'disqualified') return false
+    // Respeta el control manual del agente.
     if (flowState?.status === 'paused') return false
-    const lastInteraction = flowState?.lastInteractionAt ?? lead.enrolledAt
-    const windowMs = this.deps.reengageWindowHours * 60 * 60 * 1000
-    return Date.now() - lastInteraction.getTime() > windowMs
+    return true
   }
 
   private async processFlowInput(

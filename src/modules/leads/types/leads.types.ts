@@ -180,7 +180,6 @@ export interface BaseCampaignPort {
 export type FlowEngineDeps = {
   captures: LeadCaptureRepositoryPort
   campaigns: BaseCampaignPort
-  reengageWindowHours: number
   campaignLeads: CampaignLeadRepositoryPort
   flowStates: LeadFlowStateRepositoryPort
   conversations: WhatsAppConversationRepositoryPort

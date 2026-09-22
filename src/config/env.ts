@@ -26,7 +26,6 @@ export type AppEnv = {
   jwtAccessExpiresIn: string
   refreshTokenDays: number
   passwordResetTokenMinutes: number
-  flowReengageWindowHours: number
   frontendPasswordResetUrl: string
   smtp: {
     host: string
@@ -55,7 +54,6 @@ export function getEnv(): AppEnv {
     jwtAccessExpiresIn: optional('JWT_ACCESS_EXPIRES_IN', '7d'),
     refreshTokenDays: optionalInt('REFRESH_TOKEN_DAYS', 30),
     passwordResetTokenMinutes: optionalInt('PASSWORD_RESET_TOKEN_MINUTES', 60),
-    flowReengageWindowHours: optionalInt('FLOW_REENGAGE_WINDOW_HOURS', 24),
     frontendPasswordResetUrl: required('FRONTEND_PASSWORD_RESET_URL'),
     smtp: {
       host: required('SMTP_HOST'),
