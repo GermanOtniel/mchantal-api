@@ -47,6 +47,7 @@ function mkLeadsRepo(over: Partial<CampaignLeadRepositoryPort> = {}): CampaignLe
     listAll: vi.fn(async () => []),
     listLeads: vi.fn(async () => ({ items: [leadItem()], total: 1 })),
     existsByContactIdAndAssignee: vi.fn(async () => false),
+    findOpenSiblingsByContactId: vi.fn(async () => []),
     ...over,
   }
 }
@@ -700,6 +701,46 @@ describe('LeadsService.getLead', () => {
     expect(res.conversationId).toBe('conv-9')
     expect(res.flowState).toBe('paused')
     expect(res.contact).toEqual({ name: 'Ana', waId: '5212345678' })
+  })
+
+  it('getLead incluye siblings (leads abiertos del contacto asignados a otros ejecutivos)', async () => {
+    const leadsRepo = mkLeadsRepo()
+    vi.mocked(leadsRepo.findOpenSiblingsByContactId).mockResolvedValue([
+      { campaignName: 'Campaña B', assignedExecutiveName: 'Juan Pérez' },
+      { campaignName: 'Campaña C', assignedExecutiveName: 'María Gómez' },
+    ])
+    const svc = mkSvc({ leadsRepo })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(leadsRepo.findOpenSiblingsByContactId).toHaveBeenCalledWith('ct', 'l1', 'u1')
+    expect(res.siblings).toEqual([
+      { campaignName: 'Campaña B', assignedExecutiveName: 'Juan Pérez' },
+      { campaignName: 'Campaña C', assignedExecutiveName: 'María Gómez' },
+    ])
+  })
+
+  it('getLead devuelve siblings vacío si no hay otros leads asignados a terceros', async () => {
+    const leadsRepo = mkLeadsRepo()
+    vi.mocked(leadsRepo.findOpenSiblingsByContactId).mockResolvedValue([])
+    const svc = mkSvc({ leadsRepo })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.siblings).toEqual([])
+  })
+
+  it('scoped user (sin LEADS_READ_ALL) viendo su propio lead: devuelve siblings y excluye su userId', async () => {
+    const leadsRepo = mkLeadsRepo({
+      findById: vi.fn(async () => leadData({ assignedExecutiveId: 'u1' })),
+      findOpenSiblingsByContactId: vi.fn(async () => [
+        { campaignName: 'Campaña B', assignedExecutiveName: 'Otro Ejec' },
+      ]),
+    })
+    const svc = mkSvc({ leadsRepo })
+    const res = await svc.getLead({
+      permissions: perms(PERMISSIONS.LEADS_ATTEND), // sin LEADS_READ_ALL
+      userId: 'u1',
+      leadId: 'l1',
+    })
+    expect(leadsRepo.findOpenSiblingsByContactId).toHaveBeenCalledWith('ct', 'l1', 'u1')
+    expect(res.siblings).toEqual([{ campaignName: 'Campaña B', assignedExecutiveName: 'Otro Ejec' }])
   })
 })
 // ── getTimeline ──

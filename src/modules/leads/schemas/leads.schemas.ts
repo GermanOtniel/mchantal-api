@@ -70,6 +70,12 @@ export const LeadDetailResponseSchema = Type.Object({
   ]),
   conversationId: Type.Union([Type.String(), Type.Null()]),
   answers: Type.Array(LeadQAItemSchema),
+  siblings: Type.Array(
+    Type.Object({
+      campaignName: Type.String(),
+      assignedExecutiveName: Type.String(),
+    })
+  ),
 })
 
 export const LeadEventSchema = Type.Object({

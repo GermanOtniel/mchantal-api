@@ -48,8 +48,43 @@ export class FlowEngine {
       return
     }
 
-    if (!flowState || flowState.status !== 'active') return
-    await this.processFlowInput(sender, ctx, lead, flowState)
+    if (flowState?.status === 'active') {
+      await this.processFlowInput(sender, ctx, lead, flowState)
+      return
+    }
+
+    if (flowState?.status === 'paused') return
+
+    const sibling = await this.findReengageableSibling(ctx.contactId, lead.id)
+    if (sibling) {
+      const base = await this.deps.campaigns.findActiveBase()
+      if (!base) return
+      await this.enrollInBase(sender, ctx, base)
+      return
+    }
+    return
+  }
+
+  private async findReengageableSibling(
+    contactId: string,
+    excludeLeadId: string
+  ): Promise<CampaignLeadData | null> {
+    const terminales = await this.deps.campaignLeads.findTerminalByContactId(
+      contactId,
+      excludeLeadId
+    )
+    const elegibles: CampaignLeadData[] = []
+    for (const l of terminales) {
+      const fs = await this.deps.flowStates.findByCampaignLeadId(l.id)
+      if (this.shouldReengage(l, fs)) elegibles.push(l)
+    }
+    if (elegibles.length === 0) return null
+    if (elegibles.length === 1) return elegibles[0]
+    if (!this.deps.leadEvents) return elegibles[0]
+    const winnerId = await this.deps.leadEvents.findLatestStatusChangeLeadId(
+      elegibles.map((l) => l.id)
+    )
+    return elegibles.find((l) => l.id === winnerId) ?? elegibles[0]
   }
 
   private async enrollFromFolio(
