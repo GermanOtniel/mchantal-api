@@ -44,6 +44,21 @@ export class WhatsAppMessage {
   @Column({ type: 'jsonb', default: () => "'{}'" })
   metadata!: Record<string, unknown>
 
+  @Column({ type: 'varchar', length: 500, name: 'media_url', nullable: true })
+  mediaUrl!: string | null
+
+  @Column({ type: 'varchar', length: 30, name: 'media_type', nullable: true })
+  mediaType!: string | null
+
+  @Column({ type: 'text', name: 'media_caption', nullable: true })
+  mediaCaption!: string | null
+
+  @Column({ type: 'varchar', length: 255, name: 'media_file_name', nullable: true })
+  mediaFileName!: string | null
+
+  @Column({ type: 'uuid', name: 'campaign_document_id', nullable: true })
+  campaignDocumentId!: string | null
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date
 }
