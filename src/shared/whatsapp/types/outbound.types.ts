@@ -23,3 +23,25 @@ export type WebhookSubscriptionQuery = {
   verifyToken?: string
   challenge?: string
 }
+
+export type SendMediaMessageInput = {
+  toWaId: string
+  mediaType: 'image' | 'document'
+  mediaId: string
+  caption?: string
+  fileName?: string
+}
+
+export type SendMediaMessageResult = {
+  providerMessageId: string
+}
+
+export type UploadMediaInput = {
+  mimeType: string
+  buffer: Buffer
+  fileName?: string
+}
+
+export type UploadMediaResult = {
+  mediaId: string
+}

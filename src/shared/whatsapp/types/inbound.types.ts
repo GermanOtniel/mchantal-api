@@ -17,6 +17,9 @@ export type NormalizedMessage = {
   interactiveReplyId?: string
   interactiveReplyTitle?: string
   interactiveType?: 'button_reply' | 'list_reply'
+  mediaId?: string
+  mediaMimeType?: string
+  mediaFileName?: string
 }
 
 export type NormalizedDeliveryStatus =
@@ -36,3 +39,9 @@ export type NormalizedMessageStatus = {
 export type NormalizedInboundEvent =
   | { kind: 'message'; message: NormalizedMessage }
   | { kind: 'status'; status: NormalizedMessageStatus }
+
+export type DownloadMediaResult = {
+  buffer: Buffer
+  mimeType: string
+  fileName?: string
+}
