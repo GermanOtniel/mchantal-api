@@ -18,7 +18,7 @@ export type UploadDocumentInput = {
   mimeType: string
   buffer: Buffer
   fileSize: number
-  uploadedBy: string
+  uploadedBy: string | null
 }
 
 export class CampaignDocumentService {

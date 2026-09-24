@@ -1,11 +1,13 @@
 import cors from '@fastify/cors'
 import helmet from '@fastify/helmet'
+import multipart from '@fastify/multipart'
 import { TypeBoxTypeProvider } from '@fastify/type-provider-typebox'
 import Fastify from 'fastify'
 import { getEnv } from './config/env'
 import { resolveCorsOrigin } from './config/cors'
 import { authPlugin } from './modules/auth/routes/auth.routes'
 import { campaignsPlugin } from './modules/campaigns/routes/campaigns.routes'
+import { campaignDocumentsPlugin } from './modules/campaigns/routes/campaign-documents.routes'
 import { analyticsPlugin } from './modules/analytics/routes/analytics.routes'
 import { matcherDictionariesPlugin } from './modules/matcher-dictionaries/routes/matcher-dictionaries.routes'
 import { executivesPlugin } from './modules/executives/routes/executives.routes'
@@ -34,8 +36,12 @@ export async function buildApp() {
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'HEAD', 'OPTIONS'],
   })
   await app.register(helmet)
+  await app.register(multipart, {
+    limits: { fileSize: 100 * 1024 * 1024 },
+  })
   await app.register(authPlugin, { prefix: '/v1/auth' })
   await app.register(campaignsPlugin, { prefix: '/v1/campaigns' })
+  await app.register(campaignDocumentsPlugin, { prefix: '/v1/campaigns' })
   await app.register(analyticsPlugin, { prefix: '/v1/analytics' })
   await app.register(matcherDictionariesPlugin, { prefix: '/v1/matcher-dictionaries' })
   await app.register(executivesPlugin, { prefix: '/v1/executives' })
