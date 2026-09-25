@@ -144,7 +144,11 @@ export class MetaWhatsAppProvider implements WhatsAppProvider {
     }
     if (!meta.url) throw new Error('Meta downloadMedia did not return a URL')
 
-    const mediaRes = await fetch(meta.url)
+    const mediaRes = await fetch(meta.url, {
+      headers: {
+        Authorization: `Bearer ${this.env.meta.accessToken}`,
+      },
+    })
     if (!mediaRes.ok) {
       throw new Error(`Meta downloadMedia file fetch error (${mediaRes.status})`)
     }
