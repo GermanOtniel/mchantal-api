@@ -47,7 +47,7 @@ function applyLeadFilters(qb: LeadQB, p: ListLeadsRepoParams): void {
     qb.andWhere('(cl.id::text = :qExact OR cl.context->>\'folio\' ILIKE :qLike)', { qExact: p.q, qLike: `%${p.q}%` })
   }
   if (p.needsReply === true) {
-    qb.andHaving('needsReply = true')
+    qb.andWhere(`wc.last_message_direction = 'inbound' AND wc.last_message_at > COALESCE(wc.needs_reply_cleared_at, '-infinity'::timestamptz)`)
   }
 }
 
@@ -189,6 +189,9 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
     })
 
     const countQb = this.repo.createQueryBuilder('cl')
+    if (p.needsReply === true) {
+      countQb.leftJoin('whatsapp_conversations', 'wc', "wc.lead_id = cl.id AND wc.status = 'open'")
+    }
     applyLeadFilters(countQb, p)
     const total = await countQb.getCount()
 
