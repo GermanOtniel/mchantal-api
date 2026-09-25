@@ -30,6 +30,10 @@ function toMessagePayload(message: MessageData): MessageRealtimePayload {
     bodyText: message.bodyText,
     status: message.status as MessageRealtimePayload['status'],
     sentAt: message.sentAt.toISOString(),
+    mediaUrl: message.mediaUrl,
+    mediaType: message.mediaType,
+    mediaCaption: message.mediaCaption,
+    mediaFileName: message.mediaFileName,
   }
 }
 
@@ -336,6 +340,10 @@ export class ConversationService {
       bodyText: m.bodyText,
       status: m.status,
       sentAt: m.sentAt.toISOString(),
+      mediaUrl: m.mediaUrl,
+      mediaType: m.mediaType,
+      mediaCaption: m.mediaCaption,
+      mediaFileName: m.mediaFileName,
     }))
   }
 

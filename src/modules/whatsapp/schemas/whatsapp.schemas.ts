@@ -27,6 +27,10 @@ export const MessageItemSchema = Type.Object({
   bodyText: Type.Union([Type.String(), Type.Null()]),
   status: MessageDeliveryStatusSchema,
   sentAt: Type.String({ format: 'date-time' }),
+  mediaUrl: Type.Union([Type.String(), Type.Null()]),
+  mediaType: Type.Union([Type.String(), Type.Null()]),
+  mediaCaption: Type.Union([Type.String(), Type.Null()]),
+  mediaFileName: Type.Union([Type.String(), Type.Null()]),
 })
 
 export const MessagesListResponseSchema = Type.Object({

@@ -17,6 +17,10 @@ function toData(m: WhatsAppMessage): MessageData {
     status: m.status,
     metadata: m.metadata,
     sentAt: m.sentAt,
+    mediaUrl: m.mediaUrl,
+    mediaType: m.mediaType,
+    mediaCaption: m.mediaCaption,
+    mediaFileName: m.mediaFileName,
   }
 }
 
@@ -46,6 +50,11 @@ export class WhatsAppMessageRepository implements WhatsAppMessageRepositoryWideP
         status: data.status,
         sentAt: data.sentAt,
         metadata: data.metadata,
+        mediaUrl: data.mediaUrl ?? null,
+        mediaType: data.mediaType ?? null,
+        mediaCaption: data.mediaCaption ?? null,
+        mediaFileName: data.mediaFileName ?? null,
+        campaignDocumentId: data.campaignDocumentId ?? null,
       })
     )
     return toData(saved)
@@ -89,6 +98,14 @@ export class WhatsAppMessageRepository implements WhatsAppMessageRepositoryWideP
     }
     const rows = await qb.getMany()
     return rows.map(toData)
+  }
+
+  async updateMedia(messageId: string, media: { mediaUrl: string; mediaType: string; mediaFileName?: string }): Promise<void> {
+    await this.repo.update(messageId, {
+      mediaUrl: media.mediaUrl,
+      mediaType: media.mediaType,
+      mediaFileName: media.mediaFileName ?? null,
+    })
   }
 
   async countInboundByConversation(conversationId: string): Promise<number> {
