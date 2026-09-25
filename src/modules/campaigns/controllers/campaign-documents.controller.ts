@@ -28,22 +28,31 @@ export class CampaignDocumentsController {
 
   upload = async (request: FastifyRequest, reply: FastifyReply) => {
     const { campaignId } = request.params as { campaignId: string }
-    const data = await (request as unknown as { file: () => Promise<{
-      fields: Record<string, { value?: unknown }>
-      toBuffer: () => Promise<Buffer>
-      filename: string
-      mimetype: string
-    }> }).file()
-    if (!data) {
+
+    // Usar request.parts() para iterar todos los parts del multipart,
+    // recolectando el file y los campos de texto en el orden que vengan.
+    let fileBuffer: Buffer | null = null
+    let fileName = ''
+    let mimeType = ''
+    let displayName = ''
+
+    const parts = (request as unknown as { parts: () => AsyncIterable<{ type: string; fieldname: string; value?: string; filename?: string; mimetype?: string; toBuffer?: () => Promise<Buffer> }> }).parts()
+    for await (const part of parts) {
+      if (part.type === 'file' && part.fieldname === 'file') {
+        fileBuffer = await part.toBuffer!()
+        fileName = part.filename ?? ''
+        mimeType = part.mimetype ?? ''
+      } else if (part.type === 'field' && part.fieldname === 'displayName') {
+        displayName = part.value ?? ''
+      }
+    }
+
+    if (!fileBuffer) {
       return reply.code(400).send({
         code: 'NO_FILE',
         message: 'No se recibió ningún archivo',
       })
     }
-
-    const displayNameField = data.fields['displayName']
-    const displayName =
-      typeof displayNameField?.value === 'string' ? displayNameField.value : undefined
 
     if (!displayName || displayName.trim().length < 2) {
       return reply.code(400).send({
@@ -52,16 +61,14 @@ export class CampaignDocumentsController {
       })
     }
 
-    const buffer = await data.toBuffer()
-
     try {
       const doc = await this.docService.uploadDocument({
         campaignId,
         displayName: displayName.trim(),
-        fileName: data.filename,
-        mimeType: data.mimetype,
-        buffer,
-        fileSize: buffer.length,
+        fileName,
+        mimeType,
+        buffer: fileBuffer,
+        fileSize: fileBuffer.length,
         uploadedBy: request.user?.sub ?? null,
       })
       return reply.code(201).send(toResponse(doc))
