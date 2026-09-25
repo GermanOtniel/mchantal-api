@@ -86,4 +86,40 @@ export class WhatsAppController {
       })
     }
   }
+
+  sendMediaMessage = async (
+    request: FastifyRequest<{
+      Body: { conversationId: string; campaignDocumentId: string; caption?: string }
+    }>,
+    reply: FastifyReply
+  ) => {
+    const { conversationId, campaignDocumentId, caption } = request.body
+
+    try {
+      await this.conversations.assertConversationInScope(
+        conversationId,
+        request.permissions ?? new Set<string>(),
+        request.user!.sub
+      )
+      const result = await this.conversations.sendMediaMessage(this.provider, {
+        conversationId,
+        campaignDocumentId,
+        caption,
+        actorUserId: request.user?.sub,
+      })
+      return reply.status(201).send(result)
+    } catch (err) {
+      if (err instanceof HttpError) {
+        return reply.status(err.statusCode).send({
+          error: err.message,
+          code: err.code,
+        })
+      }
+      request.log.error(err)
+      return reply.status(502).send({
+        error: 'Failed to send media message',
+        code: 'MEDIA_SEND_FAILED',
+      })
+    }
+  }
 }

@@ -59,6 +59,17 @@ export const SendMessageResponseSchema = Type.Object({
   conversationId: Type.String({ format: 'uuid' }),
 })
 
+export const SendMediaMessageBodySchema = Type.Object(
+  {
+    conversationId: Type.String({ format: 'uuid' }),
+    campaignDocumentId: Type.String({ format: 'uuid' }),
+    caption: Type.Optional(Type.String({ maxLength: 4096 })),
+  },
+  {
+    additionalProperties: false,
+  }
+)
+
 export const ConversationIdParamsSchema = Type.Object({
   id: Type.String({ format: 'uuid' }),
 })
