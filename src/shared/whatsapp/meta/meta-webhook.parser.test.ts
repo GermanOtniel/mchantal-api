@@ -78,4 +78,65 @@ describe('parseMetaInboundPayload', () => {
   it('devuelve [] si no hay entry/changes', () => {
     expect(parseMetaInboundPayload({ object: 'whatsapp_business_account' })).toEqual([])
   })
+
+  it('parsea mensaje image con mediaId y mimeType', () => {
+    const payload = {
+      object: 'whatsapp_business_account',
+      entry: [{ changes: [{ value: {
+        contacts: [{ wa_id: '123', profile: { name: 'Test' } }],
+        messages: [{
+          id: 'msg-img',
+          from: '123',
+          timestamp: '1700000000',
+          type: 'image',
+          image: { id: 'media-123', mime_type: 'image/jpeg', caption: 'Mira esto' },
+        }],
+      } }] }],
+    }
+    const events = parseMetaInboundPayload(payload)
+    expect(events).toHaveLength(1)
+    expect(events[0].message.type).toBe('image')
+    expect(events[0].message.mediaId).toBe('media-123')
+    expect(events[0].message.mediaMimeType).toBe('image/jpeg')
+    expect(events[0].message.text).toBe('Mira esto')
+  })
+
+  it('parsea mensaje document con mediaId, mimeType y filename', () => {
+    const payload = {
+      object: 'whatsapp_business_account',
+      entry: [{ changes: [{ value: {
+        contacts: [{ wa_id: '123', profile: { name: 'Test' } }],
+        messages: [{
+          id: 'msg-doc',
+          from: '123',
+          timestamp: '1700000000',
+          type: 'document',
+          document: { id: 'media-456', mime_type: 'application/pdf', filename: 'contrato.pdf' },
+        }],
+      } }] }],
+    }
+    const events = parseMetaInboundPayload(payload)
+    expect(events[0].message.type).toBe('document')
+    expect(events[0].message.mediaId).toBe('media-456')
+    expect(events[0].message.mediaMimeType).toBe('application/pdf')
+    expect(events[0].message.mediaFileName).toBe('contrato.pdf')
+  })
+
+  it('mensaje image sin caption: text es undefined', () => {
+    const payload = {
+      object: 'whatsapp_business_account',
+      entry: [{ changes: [{ value: {
+        messages: [{
+          id: 'msg-img2',
+          from: '123',
+          timestamp: '1700000000',
+          type: 'image',
+          image: { id: 'media-789', mime_type: 'image/png' },
+        }],
+      } }] }],
+    }
+    const events = parseMetaInboundPayload(payload)
+    expect(events[0].message.mediaId).toBe('media-789')
+    expect(events[0].message.text).toBeUndefined()
+  })
 })

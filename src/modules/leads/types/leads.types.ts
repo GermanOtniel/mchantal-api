@@ -70,6 +70,11 @@ export type MessageCreateData = {
   status: string
   sentAt: Date
   metadata: Record<string, unknown>
+  mediaUrl?: string | null
+  mediaType?: string | null
+  mediaCaption?: string | null
+  mediaFileName?: string | null
+  campaignDocumentId?: string | null
 }
 
 export type CreateCampaignLeadData = {
@@ -225,6 +230,10 @@ export type MessageData = {
   status: string
   metadata: Record<string, unknown>
   sentAt: Date
+  mediaUrl: string | null
+  mediaType: string | null
+  mediaCaption: string | null
+  mediaFileName: string | null
 }
 
 export interface WhatsAppMessageRepositoryWidePort
@@ -242,6 +251,7 @@ export interface WhatsAppMessageRepositoryWidePort
     cursor?: string
   ): Promise<MessageData[]>
   countInboundByConversation(conversationId: string): Promise<number>
+  updateMedia(messageId: string, media: { mediaUrl: string; mediaType: string; mediaFileName?: string }): Promise<void>
 }
 
 export type ListLeadsQuery = {

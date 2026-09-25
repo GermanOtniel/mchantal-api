@@ -1,11 +1,15 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 import type { AppEnv } from '../../../config/env'
-import type { NormalizedInboundEvent } from '../types/inbound.types'
+import type { NormalizedInboundEvent, DownloadMediaResult } from '../types/inbound.types'
 import type {
   SendInteractiveButtonsInput,
   SendInteractiveButtonsResult,
+  SendMediaMessageInput,
+  SendMediaMessageResult,
   SendTextMessageInput,
   SendTextMessageResult,
+  UploadMediaInput,
+  UploadMediaResult,
   WebhookSubscriptionQuery,
 } from '../types/outbound.types'
 import type { WebhookHeaders, WhatsAppProvider } from '../whatsapp-provider.interface'
@@ -79,6 +83,81 @@ export class MetaWhatsAppProvider implements WhatsAppProvider {
       },
     }
     return this.sendMessage(url, payload)
+  }
+
+  async sendMediaMessage(input: SendMediaMessageInput): Promise<SendMediaMessageResult> {
+    const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${this.env.meta.phoneNumberId}/messages`
+    const mediaObj: Record<string, unknown> = { id: input.mediaId }
+    if (input.caption) mediaObj.caption = input.caption
+    if (input.fileName && input.mediaType === 'document') {
+      mediaObj.filename = input.fileName
+    }
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: input.toWaId,
+      type: input.mediaType,
+      [input.mediaType]: mediaObj,
+    }
+    return this.sendMessage(url, payload)
+  }
+
+  async uploadMedia(input: UploadMediaInput): Promise<UploadMediaResult> {
+    const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${this.env.meta.phoneNumberId}/media`
+    const formData = new FormData()
+    formData.append('messaging_product', 'whatsapp')
+    formData.append('type', input.mimeType)
+    const blob = new Blob([new Uint8Array(input.buffer)], { type: input.mimeType })
+    formData.append('file', blob, input.fileName ?? 'file')
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.env.meta.accessToken}`,
+      },
+      body: formData,
+    })
+    if (!res.ok) {
+      const errText = await res.text()
+      throw new Error(`Meta WhatsApp uploadMedia error (${res.status}): ${errText}`)
+    }
+    const data = (await res.json()) as { id?: string }
+    if (!data.id) throw new Error('Meta uploadMedia did not return an id')
+    return { mediaId: data.id }
+  }
+
+  async downloadMedia(mediaId: string): Promise<DownloadMediaResult> {
+    const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${mediaId}`
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${this.env.meta.accessToken}`,
+      },
+    })
+    if (!res.ok) {
+      const errText = await res.text()
+      throw new Error(`Meta WhatsApp downloadMedia error (${res.status}): ${errText}`)
+    }
+    const meta = (await res.json()) as {
+      url?: string
+      mime_type?: string
+      filename?: string
+    }
+    if (!meta.url) throw new Error('Meta downloadMedia did not return a URL')
+
+    const mediaRes = await fetch(meta.url, {
+      headers: {
+        Authorization: `Bearer ${this.env.meta.accessToken}`,
+      },
+    })
+    if (!mediaRes.ok) {
+      throw new Error(`Meta downloadMedia file fetch error (${mediaRes.status})`)
+    }
+    const buffer = Buffer.from(await mediaRes.arrayBuffer())
+    return {
+      buffer,
+      mimeType: meta.mime_type ?? 'application/octet-stream',
+      fileName: meta.filename,
+    }
   }
 
   private async sendMessage(url: string, payload: Record<string, unknown>): Promise<{ providerMessageId: string }> {

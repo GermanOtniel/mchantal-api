@@ -15,6 +15,8 @@ import type {
   WhatsAppConversationRepositoryWidePort,
   WhatsAppMessageRepositoryWidePort,
 } from '../../leads/types/leads.types'
+import type { CampaignDocumentRepositoryPort } from '../../campaigns/types/campaign-document.types'
+import { uploadBuffer } from '../../../shared/storage/cloudinary-client'
 import { HttpError } from '../../auth/http-error'
 import { PERMISSIONS } from '../../../shared/rbac/permissions.catalog'
 import type { RealtimeBus } from '../realtime/realtime-bus'
@@ -30,6 +32,10 @@ function toMessagePayload(message: MessageData): MessageRealtimePayload {
     bodyText: message.bodyText,
     status: message.status as MessageRealtimePayload['status'],
     sentAt: message.sentAt.toISOString(),
+    mediaUrl: message.mediaUrl,
+    mediaType: message.mediaType,
+    mediaCaption: message.mediaCaption,
+    mediaFileName: message.mediaFileName,
   }
 }
 
@@ -38,6 +44,7 @@ export type ConversationServiceDeps = {
   conversations: WhatsAppConversationRepositoryWidePort
   messages: WhatsAppMessageRepositoryWidePort
   campaignLeads: CampaignLeadRepositoryPort
+  campaignDocuments: CampaignDocumentRepositoryPort
   flowStates: LeadFlowStateRepositoryPort
   leadEvents: LeadEventsRepositoryPort
   flowEngine?: {
@@ -53,9 +60,13 @@ export class ConversationService {
     events: NormalizedInboundEvent[],
     provider?: WhatsAppSender
   ): Promise<void> {
+    // Cast: processInboundEvents recibe WhatsAppSender, pero handleInboundMessage
+    // necesita WhatsAppProvider (con downloadMedia) para media inbound. El webhook
+    // siempre pasa el MetaWhatsAppProvider completo que implementa ambas interfaces.
+    const fullProvider = provider as WhatsAppProvider | undefined
     for (const event of events) {
       if (event.kind === 'message') {
-        const ctx = await this.handleInboundMessage(event.message)
+        const ctx = await this.handleInboundMessage(event.message, fullProvider)
         if (ctx && provider && this.deps.flowEngine) {
           await this.deps.flowEngine.handleInbound(provider, ctx)
         }
@@ -82,7 +93,8 @@ export class ConversationService {
   }
 
   private async handleInboundMessage(
-    message: NormalizedMessage
+    message: NormalizedMessage,
+    provider?: WhatsAppProvider
   ): Promise<InboundFlowContext | null> {
     const existing = await this.deps.messages.findByProviderMessageId(
       message.providerMessageId
@@ -124,6 +136,41 @@ export class ConversationService {
         interactiveType: message.interactiveType,
       },
     })
+
+    // best-effort inbound media: descargar de Meta, subir a Cloudinary, actualizar el mensaje.
+    // Si falla, el mensaje queda persistido sin mediaUrl (no se pierde).
+    if (
+      (message.type === 'image' || message.type === 'document') &&
+      message.mediaId &&
+      provider
+    ) {
+      try {
+        const downloaded = await provider.downloadMedia(message.mediaId)
+        const leadId = conversation.leadId ?? 'unassigned'
+        const ext = message.mediaMimeType?.split('/')[1] ?? 'bin'
+        const folder = `leads/${leadId}`
+        const uploaded = await uploadBuffer(
+          downloaded.buffer,
+          message.mediaFileName ?? `media.${ext}`,
+          downloaded.mimeType,
+          {
+            folder,
+            resourceType: message.type === 'image' ? 'image' : 'raw',
+          }
+        )
+        await this.deps.messages.updateMedia(savedMessage.id, {
+          mediaUrl: uploaded.secureUrl,
+          mediaType: message.type,
+          mediaFileName: message.mediaFileName ?? downloaded.fileName ?? undefined,
+        })
+        // Actualizar el objeto en memoria para que el realtime incluya mediaUrl
+        savedMessage.mediaUrl = uploaded.secureUrl
+        savedMessage.mediaType = message.type
+        savedMessage.mediaFileName = message.mediaFileName ?? downloaded.fileName ?? null
+      } catch (err) {
+        console.error('[conversation] best-effort inbound media download/upload failed', err)
+      }
+    }
 
     await this.deps.conversations.touchLastMessage(conversation.id, message.timestamp, 'inbound')
 
@@ -304,6 +351,125 @@ export class ConversationService {
     return { providerMessageId: result.providerMessageId, conversationId: conversation.id }
   }
 
+  async sendMediaMessage(
+    provider: WhatsAppProvider,
+    input: {
+      conversationId: string
+      campaignDocumentId: string
+      caption?: string
+      actorUserId?: string
+    }
+  ): Promise<{ providerMessageId: string; conversationId: string }> {
+    const doc = await this.deps.campaignDocuments.findById(input.campaignDocumentId)
+    if (!doc || doc.deletedAt) {
+      throw new HttpError('Documento no encontrado', 404, 'DOCUMENT_NOT_FOUND')
+    }
+
+    const conversation = await this.deps.conversations.findById(input.conversationId)
+    if (!conversation) {
+      throw new HttpError('Conversation not found', 404, 'CONVERSATION_NOT_FOUND')
+    }
+
+    const mediaType = doc.mimeType.startsWith('image/') ? 'image' : 'document'
+
+    // Lazy cache: obtener o crear meta_media_id
+    let mediaId = doc.metaMediaId
+    if (!mediaId) {
+      const cloudinaryRes = await fetch(doc.cloudinaryUrl)
+      const buffer = Buffer.from(await cloudinaryRes.arrayBuffer())
+      const uploaded = await provider.uploadMedia({
+        mimeType: doc.mimeType,
+        buffer,
+        fileName: doc.fileName,
+      })
+      mediaId = uploaded.mediaId
+      await this.deps.campaignDocuments.updateMetaMediaId(doc.id, mediaId)
+    }
+
+    // Enviar — auto-recovery si Meta rechaza el media_id
+    let result: { providerMessageId: string }
+    try {
+      result = await provider.sendMediaMessage({
+        toWaId: conversation.contactWaId,
+        mediaType: mediaType as 'image' | 'document',
+        mediaId,
+        caption: input.caption,
+        fileName: mediaType === 'document' ? doc.fileName : undefined,
+      })
+    } catch (sendErr) {
+      // Re-subir a Meta y reintentar
+      console.error('[conversation] media send failed, re-uploading', sendErr)
+      const cloudinaryRes = await fetch(doc.cloudinaryUrl)
+      const buffer = Buffer.from(await cloudinaryRes.arrayBuffer())
+      const reuploaded = await provider.uploadMedia({
+        mimeType: doc.mimeType,
+        buffer,
+        fileName: doc.fileName,
+      })
+      mediaId = reuploaded.mediaId
+      await this.deps.campaignDocuments.updateMetaMediaId(doc.id, mediaId)
+      result = await provider.sendMediaMessage({
+        toWaId: conversation.contactWaId,
+        mediaType: mediaType as 'image' | 'document',
+        mediaId,
+        caption: input.caption,
+        fileName: mediaType === 'document' ? doc.fileName : undefined,
+      })
+    }
+
+    const sentAt = new Date()
+    const savedMessage = await this.deps.messages.create({
+      conversationId: conversation.id,
+      direction: 'outbound',
+      providerMessageId: result.providerMessageId,
+      type: mediaType,
+      bodyText: input.caption ?? null,
+      status: 'pending',
+      sentAt,
+      metadata: {},
+      mediaUrl: doc.cloudinaryUrl,
+      mediaType,
+      mediaCaption: input.caption ?? null,
+      mediaFileName: doc.fileName,
+      campaignDocumentId: doc.id,
+    })
+
+    await this.deps.conversations.touchLastMessage(conversation.id, sentAt, 'outbound')
+
+    // best-effort side-effects (igual que sendTextMessage)
+    try {
+      this.deps.realtimeBus?.publish({
+        type: 'message.created',
+        payload: {
+          conversationId: conversation.id,
+          message: toMessagePayload(savedMessage),
+        },
+      })
+      this.publishConversationUpdated(conversation.id, sentAt, 'outbound')
+
+      const leadId = conversation.leadId
+      if (leadId) {
+        await this.deps.leadEvents.record({
+          leadId,
+          type: 'message_milestone',
+          fromValue: null,
+          toValue: null,
+          reason: null,
+          milestoneKind: 'last_outbound',
+          actorUserId: input.actorUserId ?? null,
+        })
+        const flowState = await this.deps.flowStates.findByCampaignLeadId(leadId)
+        if (flowState && flowState.status === 'active') {
+          await this.deps.flowStates.save({ ...flowState, status: 'paused' })
+        }
+      }
+    } catch (err) {
+      console.error('[conversation] best-effort post-media-send side-effects failed', err)
+    }
+
+    return { providerMessageId: result.providerMessageId, conversationId: conversation.id }
+  }
+
   async listMessages(
     conversationId: string,
     limit: number,
@@ -336,6 +502,10 @@ export class ConversationService {
       bodyText: m.bodyText,
       status: m.status,
       sentAt: m.sentAt.toISOString(),
+      mediaUrl: m.mediaUrl,
+      mediaType: m.mediaType,
+      mediaCaption: m.mediaCaption,
+      mediaFileName: m.mediaFileName,
     }))
   }
 

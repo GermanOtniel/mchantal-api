@@ -11,6 +11,7 @@ import { LeadEventsRepository } from '../leads/repositories/lead-event.repositor
 import { MatcherDictionaryRepository } from '../matcher-dictionaries/repositories/matcher-dictionary.repository'
 import { AssignmentService } from '../executives/services/assignment.service'
 import { ExecutiveRepository } from '../executives/repositories/executive.repository'
+import { CampaignDocumentRepository } from '../campaigns/repositories/campaign-document.repository'
 import { CampaignRepository } from '../campaigns/repositories/campaign.repository'
 import type { BaseCampaignData, BaseCampaignPort } from '../leads/types/leads.types'
 import type { FlowDefinition } from '../campaigns/types/flow.types'
@@ -52,11 +53,13 @@ export function getConversationService(): ConversationService {
       leadEvents: new LeadEventsRepository(),
       realtimeBus: getRealtimeBus(),
     })
+    const campaignDocuments = new CampaignDocumentRepository()
     instance = new ConversationService({
       contacts,
       conversations,
       messages,
       campaignLeads,
+      campaignDocuments,
       flowStates,
       leadEvents: new LeadEventsRepository(),
       flowEngine,

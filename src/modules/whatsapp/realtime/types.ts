@@ -7,6 +7,10 @@ export type MessageRealtimePayload = {
   bodyText: string | null
   status: 'pending' | 'sent' | 'delivered' | 'read' | 'failed'
   sentAt: string
+  mediaUrl: string | null
+  mediaType: string | null
+  mediaCaption: string | null
+  mediaFileName: string | null
 }
 
 export type ConversationUpdatedPayload = {

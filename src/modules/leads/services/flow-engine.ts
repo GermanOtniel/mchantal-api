@@ -469,6 +469,10 @@ export class FlowEngine {
           bodyText: saved.bodyText,
           status: saved.status as MessageRealtimePayload['status'],
           sentAt: saved.sentAt.toISOString(),
+          mediaUrl: saved.mediaUrl,
+          mediaType: saved.mediaType,
+          mediaCaption: saved.mediaCaption,
+          mediaFileName: saved.mediaFileName,
         },
       },
     })

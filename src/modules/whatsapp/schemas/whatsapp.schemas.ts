@@ -27,6 +27,10 @@ export const MessageItemSchema = Type.Object({
   bodyText: Type.Union([Type.String(), Type.Null()]),
   status: MessageDeliveryStatusSchema,
   sentAt: Type.String({ format: 'date-time' }),
+  mediaUrl: Type.Union([Type.String(), Type.Null()]),
+  mediaType: Type.Union([Type.String(), Type.Null()]),
+  mediaCaption: Type.Union([Type.String(), Type.Null()]),
+  mediaFileName: Type.Union([Type.String(), Type.Null()]),
 })
 
 export const MessagesListResponseSchema = Type.Object({
@@ -54,6 +58,17 @@ export const SendMessageResponseSchema = Type.Object({
   providerMessageId: Type.String(),
   conversationId: Type.String({ format: 'uuid' }),
 })
+
+export const SendMediaMessageBodySchema = Type.Object(
+  {
+    conversationId: Type.String({ format: 'uuid' }),
+    campaignDocumentId: Type.String({ format: 'uuid' }),
+    caption: Type.Optional(Type.String({ maxLength: 4096 })),
+  },
+  {
+    additionalProperties: false,
+  }
+)
 
 export const ConversationIdParamsSchema = Type.Object({
   id: Type.String({ format: 'uuid' }),

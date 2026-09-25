@@ -28,6 +28,8 @@ type MetaInboundMessage = {
     button_reply?: { id?: string; title?: string }
     list_reply?: { id?: string; title?: string }
   }
+  image?: { id?: string; mime_type?: string; caption?: string }
+  document?: { id?: string; mime_type?: string; caption?: string; filename?: string }
 }
 
 type MetaStatus = {
@@ -65,6 +67,9 @@ function normalizeMessage(msg: MetaInboundMessage, contactName?: string): Normal
   let interactiveReplyId: string | undefined
   let interactiveReplyTitle: string | undefined
   let interactiveType: 'button_reply' | 'list_reply' | undefined
+  let mediaId: string | undefined
+  let mediaMimeType: string | undefined
+  let mediaFileName: string | undefined
 
   if (type === 'text') {
     text = msg.text?.body
@@ -80,6 +85,15 @@ function normalizeMessage(msg: MetaInboundMessage, contactName?: string): Normal
       interactiveReplyTitle = msg.interactive.list_reply?.title
       text = interactiveReplyTitle
     }
+  } else if (type === 'image' && msg.image) {
+    mediaId = msg.image.id
+    mediaMimeType = msg.image.mime_type
+    text = msg.image.caption
+  } else if (type === 'document' && msg.document) {
+    mediaId = msg.document.id
+    mediaMimeType = msg.document.mime_type
+    mediaFileName = msg.document.filename
+    text = msg.document.caption
   }
 
   return {
@@ -92,6 +106,9 @@ function normalizeMessage(msg: MetaInboundMessage, contactName?: string): Normal
     interactiveReplyId,
     interactiveReplyTitle,
     interactiveType,
+    mediaId,
+    mediaMimeType,
+    mediaFileName,
   }
 }
 

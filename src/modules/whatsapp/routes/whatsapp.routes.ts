@@ -17,6 +17,7 @@ import {
   MessagesListResponseSchema,
   SendMessageBodySchema,
   SendMessageResponseSchema,
+  SendMediaMessageBodySchema,
 } from '../schemas/whatsapp.schemas'
 import { getConversationService } from '../create-conversation-service'
 
@@ -84,6 +85,25 @@ export const whatsappPlugin: FastifyPluginAsyncTypebox = async (app) => {
       },
     },
     controller.sendMessage
+  )
+
+  app.post(
+    '/messages/media',
+    {
+      preHandler: requirePermission(PERMISSIONS.LEADS_ATTEND),
+      schema: {
+        body: SendMediaMessageBodySchema,
+        response: {
+          201: SendMessageResponseSchema,
+          400: ErrorResponseSchema,
+          401: ErrorResponseSchema,
+          403: ErrorResponseSchema,
+          404: ErrorResponseSchema,
+          502: ErrorResponseSchema,
+        },
+      },
+    },
+    controller.sendMediaMessage
   )
 
   app.get(
