@@ -473,6 +473,8 @@ export class FlowEngine {
           mediaType: saved.mediaType,
           mediaCaption: saved.mediaCaption,
           mediaFileName: saved.mediaFileName,
+          leadId,
+          contactName: null,
         },
       },
     })
@@ -480,6 +482,9 @@ export class FlowEngine {
       type: 'conversation.updated',
       payload: {
         conversationId: ctx.conversationId,
+        leadId,
+        contactName: null,
+        contactWaId: conversation?.contactWaId ?? '',
         lastMessageAt: sentAt.toISOString(),
         lastMessageDirection: 'outbound',
         needsReply: false,

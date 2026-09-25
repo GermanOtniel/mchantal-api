@@ -14,6 +14,7 @@ function makeService(over: Partial<LeadsService> = {}): LeadsService {
     changeStatus: vi.fn(async () => {}),
     resumeFlow: vi.fn(async () => {}),
     listExecutives: vi.fn(async () => []),
+    getUnreadCount: vi.fn(async () => 0),
     ...over,
   } as unknown as LeadsService
 }
@@ -211,5 +212,36 @@ describe('LeadsController.listExecutives', () => {
       leadId: 'lead-1',
     })
     expect(sent[0].body).toEqual({ items: execs })
+  })
+})
+
+describe('LeadsController.unreadCount', () => {
+  it('calls service.getUnreadCount and sends { count }', async () => {
+    const service = makeService({ getUnreadCount: vi.fn(async () => 7) })
+    const controller = new LeadsController(service)
+    const { request } = makeRequest({
+      permissions: new Set<string>(['leads.read']),
+    })
+    const { reply, sent } = makeReply()
+
+    await controller.unreadCount(request as never, reply as never)
+
+    expect(service.getUnreadCount).toHaveBeenCalledWith({
+      permissions: expect.any(Set),
+      userId: 'user-1',
+    })
+    expect(sent[0].body).toEqual({ count: 7 })
+  })
+
+  it('missing user → throws HttpError 403', async () => {
+    const service = makeService()
+    const controller = new LeadsController(service)
+    const { request } = makeRequest({ user: undefined })
+    const { reply, sent } = makeReply()
+
+    await controller.unreadCount(request as never, reply as never)
+
+    expect(sent[0].status).toBe(403)
+    expect(service.getUnreadCount).not.toHaveBeenCalled()
   })
 })

@@ -22,7 +22,7 @@ import { PERMISSIONS } from '../../../shared/rbac/permissions.catalog'
 import type { RealtimeBus } from '../realtime/realtime-bus'
 import type { MessageRealtimePayload } from '../realtime/types'
 
-function toMessagePayload(message: MessageData): MessageRealtimePayload {
+function toMessagePayload(message: MessageData, leadId: string | null, contactName: string | null): MessageRealtimePayload {
   return {
     id: message.id,
     conversationId: message.conversationId,
@@ -36,6 +36,8 @@ function toMessagePayload(message: MessageData): MessageRealtimePayload {
     mediaType: message.mediaType,
     mediaCaption: message.mediaCaption,
     mediaFileName: message.mediaFileName,
+    leadId,
+    contactName,
   }
 }
 
@@ -78,6 +80,9 @@ export class ConversationService {
 
   private publishConversationUpdated(
     conversationId: string,
+    leadId: string | null,
+    contactName: string | null,
+    contactWaId: string,
     lastMessageAt: Date,
     lastMessageDirection: 'inbound' | 'outbound'
   ): void {
@@ -85,6 +90,9 @@ export class ConversationService {
       type: 'conversation.updated',
       payload: {
         conversationId,
+        leadId,
+        contactName,
+        contactWaId,
         lastMessageAt: lastMessageAt.toISOString(),
         lastMessageDirection,
         needsReply: lastMessageDirection === 'inbound',
@@ -187,10 +195,10 @@ export class ConversationService {
         type: 'message.created',
         payload: {
           conversationId: conversation.id,
-          message: toMessagePayload(savedMessage),
+          message: toMessagePayload(savedMessage, conversation.leadId, contact.profileName),
         },
       })
-      this.publishConversationUpdated(conversation.id, message.timestamp, 'inbound')
+      this.publishConversationUpdated(conversation.id, conversation.leadId, contact.profileName, contact.waId, message.timestamp, 'inbound')
 
       if (conversation.leadId) {
         if (isFirstInbound) {
@@ -322,10 +330,10 @@ export class ConversationService {
         type: 'message.created',
         payload: {
           conversationId: conversation.id,
-          message: toMessagePayload(savedMessage),
+          message: toMessagePayload(savedMessage, conversation.leadId, null),
         },
       })
-      this.publishConversationUpdated(conversation.id, sentAt, 'outbound')
+      this.publishConversationUpdated(conversation.id, conversation.leadId, null, conversation.contactWaId, sentAt, 'outbound')
 
       const leadId = conversation.leadId
       if (leadId) {
@@ -442,10 +450,10 @@ export class ConversationService {
         type: 'message.created',
         payload: {
           conversationId: conversation.id,
-          message: toMessagePayload(savedMessage),
+          message: toMessagePayload(savedMessage, conversation.leadId, null),
         },
       })
-      this.publishConversationUpdated(conversation.id, sentAt, 'outbound')
+      this.publishConversationUpdated(conversation.id, conversation.leadId, null, conversation.contactWaId, sentAt, 'outbound')
 
       const leadId = conversation.leadId
       if (leadId) {

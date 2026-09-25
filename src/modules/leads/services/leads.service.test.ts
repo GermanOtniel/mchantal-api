@@ -23,7 +23,7 @@ function leadItem(over: Partial<LeadListItem> = {}): LeadListItem {
   return {
     id: 'l1', folio: 'MC-1', campaignId: 'c1', campaignName: 'C', contactWaId: 'w', contactName: 'Ana',
     answers: {}, assignmentMode: 'executive', assignedExecutiveId: 'u1', assignedExecutiveName: 'Pepe',
-    assignedAt: new Date('2026-01-01'), enrolledAt: new Date('2026-01-01'), status: 'new', needsReply: false, ...over,
+    assignedAt: new Date('2026-01-01'), enrolledAt: new Date('2026-01-01'), status: 'new', needsReply: false, lastMessageReceivedAt: null, ...over,
   }
 }
 
@@ -46,6 +46,7 @@ function mkLeadsRepo(over: Partial<CampaignLeadRepositoryPort> = {}): CampaignLe
     save: vi.fn(async (l) => l),
     listAll: vi.fn(async () => []),
     listLeads: vi.fn(async () => ({ items: [leadItem()], total: 1 })),
+    countNeedsReply: vi.fn(async () => 0),
     existsByContactIdAndAssignee: vi.fn(async () => false),
     findOpenSiblingsByContactId: vi.fn(async () => []),
     ...over,
@@ -58,7 +59,7 @@ function mkConvRepo(over: Partial<WhatsAppConversationRepositoryWidePort> = {}):
     setLead: vi.fn(async () => {}),
     findOpenByContactId: vi.fn(async () => null),
     findOpenByLeadId: vi.fn(async () => null),
-    createOpen: vi.fn(async () => ({ id: 'conv', contactId: 'ct', contactWaId: 'w', status: 'open', leadId: null, lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null })),
+    createOpen: vi.fn(async () => ({ id: 'conv', contactId: 'ct', contactWaId: 'w', status: 'open', leadId: null, lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null, lastInboundAt: null })),
     touchLastMessage: vi.fn(async () => {}),
     clearNeedsReplyByContactId: vi.fn(async () => true),
     ...over,
@@ -415,7 +416,7 @@ const welcomeToBridgeNode = {
 function convData(over: Partial<ConversationData> = {}): ConversationData {
   return {
     id: 'conv1', contactId: 'ct', contactWaId: '5212345678', status: 'open', leadId: 'l1',
-    lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null, ...over,
+    lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null, lastInboundAt: null, ...over,
   }
 }
 
@@ -1071,5 +1072,31 @@ describe('LeadsService.listExecutives', () => {
     const res = await svc.listExecutives({ permissions: perms(PERMISSIONS.LEADS_REASSIGN), userId: 'u1', leadId: 'l1' })
     expect(execRepo.listAvailableForCampaign).toHaveBeenCalledWith('c1')
     expect(res).toHaveLength(2)
+  })
+})
+
+
+// ── getUnreadCount ──
+
+describe('LeadsService.getUnreadCount', () => {
+  it('sin leads.read → 403', async () => {
+    const svc = mkSvc()
+    await expect(svc.getUnreadCount({ permissions: perms(), userId: 'u1' })).rejects.toMatchObject({ statusCode: 403 })
+  })
+
+  it('con leads.read.all → scopeUserId null (todos)', async () => {
+    const leadsRepo = mkLeadsRepo({ countNeedsReply: vi.fn(async () => 5) })
+    const svc = mkSvc({ leadsRepo })
+    const count = await svc.getUnreadCount({ permissions: perms(PERMISSIONS.LEADS_READ, PERMISSIONS.LEADS_READ_ALL), userId: 'u1' })
+    expect(leadsRepo.countNeedsReply).toHaveBeenCalledWith(null)
+    expect(count).toBe(5)
+  })
+
+  it('sin leads.read.all → scopeUserId = userId', async () => {
+    const leadsRepo = mkLeadsRepo({ countNeedsReply: vi.fn(async () => 2) })
+    const svc = mkSvc({ leadsRepo })
+    const count = await svc.getUnreadCount({ permissions: perms(PERMISSIONS.LEADS_READ), userId: 'u1' })
+    expect(leadsRepo.countNeedsReply).toHaveBeenCalledWith('u1')
+    expect(count).toBe(2)
   })
 })

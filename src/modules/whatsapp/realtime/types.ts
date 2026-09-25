@@ -11,10 +11,15 @@ export type MessageRealtimePayload = {
   mediaType: string | null
   mediaCaption: string | null
   mediaFileName: string | null
+  leadId: string | null
+  contactName: string | null
 }
 
 export type ConversationUpdatedPayload = {
   conversationId: string
+  leadId: string | null
+  contactName: string | null
+  contactWaId: string
   lastMessageAt: string
   lastMessageDirection: 'inbound' | 'outbound'
   needsReply: boolean

@@ -39,6 +39,9 @@ export class WhatsAppConversation {
   @Column({ type: 'timestamptz', nullable: true, name: 'needs_reply_cleared_at' })
   needsReplyClearedAt!: Date | null
 
+  @Column({ type: 'timestamptz', nullable: true, name: 'last_inbound_at' })
+  lastInboundAt!: Date | null
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date
 

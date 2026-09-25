@@ -53,6 +53,7 @@ function toResponse(l: LeadListItem): LeadItemResponse {
     enrolledAt: l.enrolledAt.toISOString(),
     status: l.status,
     needsReply: l.needsReply,
+    lastMessageReceivedAt: l.lastMessageReceivedAt ? l.lastMessageReceivedAt.toISOString() : null,
   }
 }
 
@@ -108,6 +109,9 @@ export class LeadsService {
       status,
       assignment,
       q,
+      needsReply: query.needsReply,
+      sortBy: query.sortBy,
+      sortOrder: query.sortOrder,
       page,
       pageSize: this.pageSize,
     })
@@ -449,5 +453,17 @@ export class LeadsService {
       throw new HttpError('Lead not found', 404, 'LEAD_NOT_FOUND')
     }
     return this.executives.listAvailableForCampaign(lead.campaignId)
+  }
+
+  async getUnreadCount(input: {
+    permissions: Set<string>
+    userId: string
+  }): Promise<number> {
+    if (!input.permissions.has(PERMISSIONS.LEADS_READ)) {
+      throw new HttpError('Forbidden', 403, 'FORBIDDEN')
+    }
+    const scopeAll = input.permissions.has(PERMISSIONS.LEADS_READ_ALL)
+    const scopeUserId = scopeAll ? null : input.userId
+    return this.campaignLeads.countNeedsReply(scopeUserId)
   }
 }
