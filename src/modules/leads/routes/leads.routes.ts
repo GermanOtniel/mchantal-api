@@ -25,6 +25,7 @@ import {
   ReassignBodySchema,
   ChangeStatusBodySchema,
   ExecutivesResponseSchema,
+  UnreadCountResponseSchema,
 } from '../schemas/leads.schemas'
 
 const PAGE_SIZE = 50
@@ -62,6 +63,15 @@ export const leadsPlugin: FastifyPluginAsyncTypebox = async (app) => {
       schema: { response: { 200: FilterOptionsResponseSchema } },
     },
     controller.filterOptions
+  )
+
+  app.get(
+    '/unread-count',
+    {
+      preHandler: requirePermission(PERMISSIONS.LEADS_READ),
+      schema: { response: { 200: UnreadCountResponseSchema } },
+    },
+    controller.unreadCount
   )
 
   app.post(

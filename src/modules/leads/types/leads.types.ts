@@ -59,6 +59,7 @@ export type ConversationData = {
   lastMessageAt: Date | null
   lastMessageDirection: 'inbound' | 'outbound' | null
   needsReplyClearedAt: Date | null
+  lastInboundAt: Date | null
 }
 
 export type MessageCreateData = {
@@ -107,6 +108,7 @@ export interface CampaignLeadRepositoryPort {
   save(lead: CampaignLeadData): Promise<CampaignLeadData>
   listAll(): Promise<LeadListItem[]>
   listLeads(params: ListLeadsRepoParams): Promise<LeadsRepoPage>
+  countNeedsReply(scopeUserId: string | null): Promise<number>
   existsByContactIdAndAssignee(
     contactId: string,
     assigneeUserId: string
@@ -137,6 +139,7 @@ export type LeadListItem = {
   enrolledAt: Date
   status: string
   needsReply: boolean
+  lastMessageReceivedAt: Date | null
 }
 
 export type ListLeadsRepoParams = {
@@ -145,6 +148,9 @@ export type ListLeadsRepoParams = {
   status?: string
   assignment?: string
   q?: string
+  needsReply?: boolean
+  sortBy?: 'enrolledAt' | 'lastMessageReceivedAt'
+  sortOrder?: 'asc' | 'desc'
   page: number
   pageSize: number
 }
@@ -260,6 +266,9 @@ export type ListLeadsQuery = {
   status?: string
   assignment?: string
   q?: string
+  needsReply?: boolean
+  sortBy?: 'enrolledAt' | 'lastMessageReceivedAt'
+  sortOrder?: 'asc' | 'desc'
 }
 
 export type LeadItemResponse = {
@@ -277,6 +286,7 @@ export type LeadItemResponse = {
   enrolledAt: string
   status: string
   needsReply: boolean
+  lastMessageReceivedAt: string | null
 }
 
 export type LeadsPageResponse = {

@@ -195,4 +195,19 @@ export class LeadsController {
       return handleError(reply, e)
     }
   }
+
+  unreadCount = async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      if (!request.permissions || !request.user?.sub) {
+        throw new HttpError('Forbidden', 403, 'FORBIDDEN')
+      }
+      const count = await this.service.getUnreadCount({
+        permissions: request.permissions,
+        userId: request.user.sub,
+      })
+      return reply.send({ count })
+    } catch (e) {
+      return handleError(reply, e)
+    }
+  }
 }

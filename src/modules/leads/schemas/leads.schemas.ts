@@ -15,6 +15,7 @@ export const LeadItemSchema = Type.Object({
   enrolledAt: Type.String(),
   status: Type.String(),
   needsReply: Type.Boolean(),
+  lastMessageReceivedAt: Type.Union([Type.String(), Type.Null()]),
 })
 
 export const LeadsPageResponseSchema = Type.Object({
@@ -31,6 +32,15 @@ export const ListLeadsQuerySchema = Type.Object({
   status: Type.Optional(Type.String()),
   assignment: Type.Optional(Type.String()),
   q: Type.Optional(Type.String()),
+  needsReply: Type.Optional(Type.Boolean()),
+  sortBy: Type.Optional(Type.Union([
+    Type.Literal('enrolledAt'),
+    Type.Literal('lastMessageReceivedAt'),
+  ])),
+  sortOrder: Type.Optional(Type.Union([
+    Type.Literal('asc'),
+    Type.Literal('desc'),
+  ])),
 })
 
 export const FilterOptionsResponseSchema = Type.Object({
@@ -119,3 +129,7 @@ export const AvailableExecutiveSchema = Type.Object({
   activeLeads: Type.Integer(),
 })
 export const ExecutivesResponseSchema = Type.Object({ items: Type.Array(AvailableExecutiveSchema) })
+
+export const UnreadCountResponseSchema = Type.Object({
+  count: Type.Integer({ minimum: 0 }),
+})

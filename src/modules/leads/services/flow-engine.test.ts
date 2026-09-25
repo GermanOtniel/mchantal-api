@@ -1515,7 +1515,7 @@ describe('FlowEngine — re-engagement via lead hermano (multi-lead)', () => {
     const deps = coldReengageDeps({
       captures: { findPendingByFolio: vi.fn(async (f: string) => f === 'MC-CCCC' ? captureC : null), markMatched: vi.fn(async () => {}) } as never,
       conversations: {
-        findById: vi.fn(async () => ({ id: 'conv1', contactId: 'ct1', contactWaId: '', status: 'open' as const, leadId: convLeadId, lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null })),
+        findById: vi.fn(async () => ({ id: 'conv1', contactId: 'ct1', contactWaId: '', status: 'open' as const, leadId: convLeadId, lastMessageAt: null, lastMessageDirection: null, needsReplyClearedAt: null, lastInboundAt: null })),
         setLead, touchLastMessage: vi.fn(async () => {}),
       },
       campaignLeads: {

@@ -46,6 +46,9 @@ function applyLeadFilters(qb: LeadQB, p: ListLeadsRepoParams): void {
   if (p.q) {
     qb.andWhere('(cl.id::text = :qExact OR cl.context->>\'folio\' ILIKE :qLike)', { qExact: p.q, qLike: `%${p.q}%` })
   }
+  if (p.needsReply === true) {
+    qb.andWhere(`wc.last_message_direction = 'inbound' AND wc.last_message_at > COALESCE(wc.needs_reply_cleared_at, '-infinity'::timestamptz)`)
+  }
 }
 
 export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
@@ -118,6 +121,7 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
         enrolledAt: r.enrolledAt,
         status: r.status,
         needsReply: false,
+        lastMessageReceivedAt: null,
       }
     })
   }
@@ -137,6 +141,7 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
       .addSelect('contact.wa_id', 'contactWaId')
       .addSelect('contact.profile_name', 'contactName')
       .addSelect('executive.full_name', 'assignedExecutiveName')
+      .addSelect('wc.last_inbound_at', 'lastMessageReceivedAt')
       .addSelect(
         `CASE WHEN wc.last_message_direction = 'inbound' AND wc.last_message_at > COALESCE(wc.needs_reply_cleared_at, '-infinity'::timestamptz) THEN true ELSE false END`,
         'needsReply'
@@ -145,11 +150,18 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
       .leftJoin('whatsapp_contacts', 'contact', 'contact.id = cl.contact_id')
       .leftJoin('users', 'executive', 'executive.id = cl.assigned_executive_id')
       .leftJoin('whatsapp_conversations', 'wc', "wc.lead_id = cl.id AND wc.status = 'open'")
-      .orderBy('cl.enrolled_at', 'DESC')
       .offset((p.page - 1) * p.pageSize)
       .limit(p.pageSize)
 
     applyLeadFilters(qb, p)
+
+    const SORT_MAP: Record<string, string> = {
+      enrolledAt: 'cl.enrolled_at',
+      lastMessageReceivedAt: 'wc.last_inbound_at',
+    }
+    const sortColumn = SORT_MAP[p.sortBy ?? 'enrolledAt'] ?? 'cl.enrolled_at'
+    const sortOrder = p.sortOrder === 'asc' ? 'ASC' : 'DESC'
+    qb.orderBy(sortColumn, sortOrder)
 
     const raw = await qb.getRawMany<Record<string, unknown>>()
 
@@ -172,14 +184,30 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
         enrolledAt: new Date(r.enrolledAt as string),
         status: String(r.status ?? 'new'),
         needsReply: Boolean(r.needsReply),
+        lastMessageReceivedAt: r.lastMessageReceivedAt ? new Date(r.lastMessageReceivedAt as string) : null,
       }
     })
 
     const countQb = this.repo.createQueryBuilder('cl')
+    if (p.needsReply === true) {
+      countQb.leftJoin('whatsapp_conversations', 'wc', "wc.lead_id = cl.id AND wc.status = 'open'")
+    }
     applyLeadFilters(countQb, p)
     const total = await countQb.getCount()
 
     return { items, total }
+  }
+
+  async countNeedsReply(scopeUserId: string | null): Promise<number> {
+    const qb = this.repo
+      .createQueryBuilder('cl')
+      .leftJoin('whatsapp_conversations', 'wc', "wc.lead_id = cl.id AND wc.status = 'open'")
+      .where(`wc.last_message_direction = 'inbound' AND wc.last_message_at > COALESCE(wc.needs_reply_cleared_at, '-infinity'::timestamptz)`)
+    if (scopeUserId) {
+      qb.andWhere('cl.assigned_executive_id = :scopeUserId', { scopeUserId })
+    }
+    const total = await qb.getCount()
+    return total
   }
 
   async existsByContactIdAndAssignee(

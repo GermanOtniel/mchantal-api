@@ -15,6 +15,7 @@ function toData(c: WhatsAppConversation): ConversationData {
     lastMessageAt: c.lastMessageAt,
     lastMessageDirection: c.lastMessageDirection,
     needsReplyClearedAt: c.needsReplyClearedAt,
+    lastInboundAt: c.lastInboundAt,
   }
 }
 
@@ -40,6 +41,7 @@ export class WhatsAppConversationRepository
       lastMessageAt: c.lastMessageAt,
       lastMessageDirection: c.lastMessageDirection,
       needsReplyClearedAt: c.needsReplyClearedAt,
+      lastInboundAt: c.lastInboundAt,
     }
   }
 
@@ -71,6 +73,7 @@ export class WhatsAppConversationRepository
       lastMessageAt: c.lastMessageAt,
       lastMessageDirection: c.lastMessageDirection,
       needsReplyClearedAt: c.needsReplyClearedAt,
+      lastInboundAt: c.lastInboundAt,
     }
   }
 
@@ -80,7 +83,11 @@ export class WhatsAppConversationRepository
   }
 
   async touchLastMessage(id: string, at: Date, direction: 'inbound' | 'outbound'): Promise<void> {
-    await this.repo.update({ id }, { lastMessageAt: at, lastMessageDirection: direction })
+    if (direction === 'inbound') {
+      await this.repo.update({ id }, { lastMessageAt: at, lastMessageDirection: direction, lastInboundAt: at })
+    } else {
+      await this.repo.update({ id }, { lastMessageAt: at, lastMessageDirection: direction })
+    }
   }
 
   async clearNeedsReplyByLeadId(leadId: string): Promise<boolean> {
