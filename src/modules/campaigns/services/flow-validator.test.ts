@@ -511,3 +511,140 @@ describe('flowWarnings', () => {
     expect(warns.some((w) => w.code === 'NODE_REF_NOT_FOUND')).toBe(false)
   })
 })
+
+// ── list_message validation ──
+
+function listMessageFlow(over: Partial<Record<string, unknown>> = {}): FlowDefinition {
+  return {
+    nodes: {
+      welcome: {
+        id: 'welcome',
+        type: 'list_message',
+        body: '¿Qué te interesa?',
+        buttonText: 'Ver opciones',
+        rows: [
+          { id: 'r1', title: 'Maquillaje', description: 'Labiales, bases' },
+          { id: 'r2', title: 'Skincare' },
+          { id: 'r3', title: 'Perfumes' },
+        ],
+        transitions: { r1: 'closing', r2: 'closing', r3: 'closing' },
+        onFreeText: 'reprompt',
+        ...over,
+      },
+      closing: { id: 'closing', type: 'text_message', body: '¡Gracias!' },
+    },
+  }
+}
+
+describe('validateFlowDefinition — list_message casos válidos', () => {
+  it('list_message válido con 3 rows, transitions y header/footer → sin errores', () => {
+    const flow = listMessageFlow({ header: 'Encuesta', footer: 'Gracias' })
+    expect(errors(validateFlowDefinition(flow))).toEqual([])
+  })
+
+  it('list_message sin header ni footer → válido', () => {
+    expect(errors(validateFlowDefinition(listMessageFlow()))).toEqual([])
+  })
+
+  it('list_message con rows que tienen description → válido', () => {
+    expect(errors(validateFlowDefinition(listMessageFlow()))).toEqual([])
+  })
+
+  it('list_message como entry node → válido', () => {
+    const flow = { ...listMessageFlow(), entryNodeId: 'welcome' }
+    expect(errors(validateFlowDefinition(flow))).toEqual([])
+  })
+
+  it('entryNodeId apuntando a list_message → válido', () => {
+    const flow = {
+      entryNodeId: 'list1',
+      nodes: {
+        list1: { id: 'list1', type: 'list_message', body: '¿?', buttonText: 'Abrir', rows: [{ id: 'r1', title: 'O1' }], transitions: { r1: 'closing' } },
+        closing: { id: 'closing', type: 'text_message', body: 'bye' },
+      },
+    }
+    expect(errors(validateFlowDefinition(flow))).toEqual([])
+  })
+
+  it('entryNodeId apuntando a text_message → ENTRY_NODE_INVALID', () => {
+    const flow = {
+      entryNodeId: 'closing',
+      nodes: {
+        welcome: { id: 'welcome', type: 'list_message', body: '¿?', buttonText: 'Abrir', rows: [{ id: 'r1', title: 'O1' }], transitions: { r1: 'closing' } },
+        closing: { id: 'closing', type: 'text_message', body: 'bye' },
+      },
+    }
+    expect(codes(validateFlowDefinition(flow))).toContain('ENTRY_NODE_INVALID')
+  })
+})
+
+describe('validateFlowDefinition — list_message casos inválidos', () => {
+  it('body vacío → LIST_BODY_EMPTY', () => {
+    expect(codes(validateFlowDefinition(listMessageFlow({ body: '' })))).toContain('LIST_BODY_EMPTY')
+  })
+
+  it('buttonText vacío → LIST_BUTTON_TEXT_EMPTY', () => {
+    expect(codes(validateFlowDefinition(listMessageFlow({ buttonText: '' })))).toContain('LIST_BUTTON_TEXT_EMPTY')
+  })
+
+  it('rows vacío → LIST_ROWS_EMPTY', () => {
+    expect(codes(validateFlowDefinition(listMessageFlow({ rows: [] })))).toContain('LIST_ROWS_EMPTY')
+  })
+
+  it('rows con 11 elementos → LIST_ROWS_TOO_MANY', () => {
+    const rows = Array.from({ length: 11 }, (_, i) => ({ id: `r${i}`, title: `O${i}` }))
+    const flow = listMessageFlow({ rows, transitions: Object.fromEntries(rows.map(r => [r.id, 'closing'])) })
+    expect(codes(validateFlowDefinition(flow))).toContain('LIST_ROWS_TOO_MANY')
+  })
+
+  it('row con title vacío → LIST_ROW_TITLE_EMPTY', () => {
+    expect(codes(validateFlowDefinition(listMessageFlow({ rows: [{ id: 'r1', title: '' }] })))).toContain('LIST_ROW_TITLE_EMPTY')
+  })
+
+  it('row con id duplicado → LIST_ROW_ID_DUPLICATE', () => {
+    const rows = [{ id: 'dup', title: 'A' }, { id: 'dup', title: 'B' }]
+    const flow = listMessageFlow({ rows, transitions: { dup: 'closing' } })
+    expect(codes(validateFlowDefinition(flow))).toContain('LIST_ROW_ID_DUPLICATE')
+  })
+
+  it('transition apunta a nodo inexistente → NODE_REF_NOT_FOUND', () => {
+    expect(codes(validateFlowDefinition(listMessageFlow({ transitions: { r1: 'no_existe', r2: 'closing', r3: 'closing' } })))).toContain('NODE_REF_NOT_FOUND')
+  })
+
+  it('row sin transition (vacía) → BRANCH_NOT_TERMINATED', () => {
+    const flow: FlowDefinition = {
+      nodes: {
+        welcome: { id: 'welcome', type: 'list_message', body: '¿?', buttonText: 'Abrir', rows: [{ id: 'r1', title: 'O1' }], transitions: {} },
+      },
+    }
+    expect(codes(validateFlowDefinition(flow))).toContain('BRANCH_NOT_TERMINATED')
+  })
+
+  it('onFreeText con valor no soportado → ON_FREE_TEXT_UNSUPPORTED', () => {
+    expect(codes(validateFlowDefinition(listMessageFlow({ onFreeText: 'fallback_node' })))).toContain('ON_FREE_TEXT_UNSUPPORTED')
+  })
+
+  it('body con más de 1024 chars → LIST_BODY_TOO_LONG', () => {
+    expect(codes(validateFlowDefinition(listMessageFlow({ body: 'A'.repeat(1025) })))).toContain('LIST_BODY_TOO_LONG')
+  })
+
+  it('buttonText con más de 20 chars → LIST_BUTTON_TEXT_TOO_LONG', () => {
+    expect(codes(validateFlowDefinition(listMessageFlow({ buttonText: 'B'.repeat(21) })))).toContain('LIST_BUTTON_TEXT_TOO_LONG')
+  })
+
+  it('header con más de 60 chars → LIST_HEADER_TOO_LONG', () => {
+    expect(codes(validateFlowDefinition(listMessageFlow({ header: 'H'.repeat(61) })))).toContain('LIST_HEADER_TOO_LONG')
+  })
+
+  it('footer con más de 60 chars → LIST_FOOTER_TOO_LONG', () => {
+    expect(codes(validateFlowDefinition(listMessageFlow({ footer: 'F'.repeat(61) })))).toContain('LIST_FOOTER_TOO_LONG')
+  })
+
+  it('row.title con más de 24 chars → LIST_ROW_TITLE_TOO_LONG', () => {
+    expect(codes(validateFlowDefinition(listMessageFlow({ rows: [{ id: 'r1', title: 'T'.repeat(25) }] })))).toContain('LIST_ROW_TITLE_TOO_LONG')
+  })
+
+  it('row.description con más de 72 chars → LIST_ROW_DESCRIPTION_TOO_LONG', () => {
+    expect(codes(validateFlowDefinition(listMessageFlow({ rows: [{ id: 'r1', title: 'OK', description: 'D'.repeat(73) }] })))).toContain('LIST_ROW_DESCRIPTION_TOO_LONG')
+  })
+})
