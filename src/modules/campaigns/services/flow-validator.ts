@@ -311,7 +311,7 @@ function detectCycles(
   const color = new Map<string, number>()
 
   const dfs = (id: string): boolean => {
-    const node = nodes[id] as { type?: string; buttons?: { id: string }[]; transitions?: Record<string, string>; nextNodeId?: string; fallback?: { transition: string } | string; defaultTransition?: string } | undefined
+    const node = nodes[id] as { type?: string; buttons?: { id: string }[]; rows?: { id: string }[]; transitions?: Record<string, string>; nextNodeId?: string; fallback?: { transition: string } | string; defaultTransition?: string } | undefined
     if (!node || !isPlainObject(node)) return false
     const c = color.get(id) ?? WHITE
     if (c === GRAY) {
@@ -324,6 +324,11 @@ function detectCycles(
     if (node.type === 'interactive_buttons') {
       for (const btn of node.buttons ?? []) {
         const t = node.transitions?.[btn.id]
+        if (t && nodes[t] && dfs(t)) { cycle = true; break }
+      }
+    } else if (node.type === 'list_message') {
+      for (const row of node.rows ?? []) {
+        const t = node.transitions?.[row.id]
         if (t && nodes[t] && dfs(t)) { cycle = true; break }
       }
     } else if (node.type === 'text_message') {
@@ -377,7 +382,7 @@ function detectAssignmentWarnings(
     // no tiene override. Esto puede sobre-avisar en ramas que sí tienen override
     // (están asignadas en runtime) — dirección conservadora: sobre-avisar > falso negativo.
     if (t === 'text_input') return !!node.assignment
-    return false // interactive_buttons no lleva asignación
+    return false // interactive_buttons / list_message no lleva asignación
   }
 
   const isTerminal = (node: unknown): boolean => {
@@ -403,6 +408,14 @@ function detectAssignmentWarnings(
       if (Array.isArray(node.buttons) && isPlainObject(trans)) {
         for (const btn of node.buttons as { id: string }[]) {
           const tgt = trans[btn.id]
+          if (typeof tgt === 'string') out.push(tgt)
+        }
+      }
+    } else if (t === 'list_message') {
+      const trans = node.transitions
+      if (Array.isArray(node.rows) && isPlainObject(trans)) {
+        for (const row of node.rows as { id: string }[]) {
+          const tgt = trans[row.id]
           if (typeof tgt === 'string') out.push(tgt)
         }
       }

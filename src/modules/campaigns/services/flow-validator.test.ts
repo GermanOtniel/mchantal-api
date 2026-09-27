@@ -648,3 +648,53 @@ describe('validateFlowDefinition — list_message casos inválidos', () => {
     expect(codes(validateFlowDefinition(listMessageFlow({ rows: [{ id: 'r1', title: 'OK', description: 'D'.repeat(73) }] })))).toContain('LIST_ROW_DESCRIPTION_TOO_LONG')
   })
 })
+
+describe('validateFlowDefinition — list_message ciclos y assignment warnings', () => {
+  it('ciclo que incluye list_message → CYCLE', () => {
+    const flow: FlowDefinition = {
+      nodes: {
+        a: {
+          id: 'a', type: 'list_message', body: 'A', buttonText: 'Abrir',
+          rows: [{ id: 'x', title: 'X' }],
+          transitions: { x: 'b' },
+        },
+        b: {
+          id: 'b', type: 'list_message', body: 'B', buttonText: 'Abrir',
+          rows: [{ id: 'y', title: 'Y' }],
+          transitions: { y: 'a' },
+        },
+      },
+    }
+    expect(codes(validateFlowDefinition(flow))).toContain('CYCLE')
+  })
+
+  it('list_message como entry node con ciclo → CYCLE', () => {
+    const flow: FlowDefinition = {
+      nodes: {
+        welcome: {
+          id: 'welcome', type: 'list_message', body: '¿?', buttonText: 'Abrir',
+          rows: [{ id: 'r1', title: 'O1' }],
+          transitions: { r1: 'welcome' },
+        },
+      },
+    }
+    expect(codes(validateFlowDefinition(flow))).toContain('CYCLE')
+  })
+
+  it('rama terminal (row → text_message sin next) sin asignación → BRANCH_WITHOUT_ASSIGNMENT (warning)', () => {
+    const flow = listMessageFlow()
+    const warns = validateFlowDefinition(flow).filter(i => i.severity === 'warning')
+    expect(warns.some(w => w.code === 'BRANCH_WITHOUT_ASSIGNMENT')).toBe(true)
+  })
+
+  it('list_message con asignación heredada que llega a text_message con asignación propia → ASSIGNMENT_REDUNDANT (warning)', () => {
+    const flow = listMessageFlow()
+    // closing tiene assignment, y le agregamos closing2 con assignment → redundant
+    ;(flow.nodes.closing as { assignment?: unknown }).assignment = { mode: 'manual' }
+    ;(flow.nodes.closing as { nextNodeId?: string }).nextNodeId = 'closing2'
+    flow.nodes.closing2 = { id: 'closing2', type: 'text_message', body: 'Fin', assignment: { mode: 'manual' } } as never
+    const r = validateFlowDefinition(flow).find(i => i.code === 'ASSIGNMENT_REDUNDANT' && i.field.includes('closing2'))
+    expect(r).toBeDefined()
+    expect(r!.severity).toBe('warning')
+  })
+})
