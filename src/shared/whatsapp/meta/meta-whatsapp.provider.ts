@@ -4,6 +4,8 @@ import type { NormalizedInboundEvent, DownloadMediaResult } from '../types/inbou
 import type {
   SendInteractiveButtonsInput,
   SendInteractiveButtonsResult,
+  SendListMessageInput,
+  SendListMessageResult,
   SendMediaMessageInput,
   SendMediaMessageResult,
   SendTextMessageInput,
@@ -79,6 +81,33 @@ export class MetaWhatsAppProvider implements WhatsAppProvider {
             type: 'reply',
             reply: { id: button.id, title: button.title.slice(0, 20) },
           })),
+        },
+      },
+    }
+    return this.sendMessage(url, payload)
+  }
+
+  async sendListMessage(input: SendListMessageInput): Promise<SendListMessageResult> {
+    const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${this.env.meta.phoneNumberId}/messages`
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: input.toWaId,
+      type: 'interactive',
+      interactive: {
+        type: 'list',
+        ...(input.header ? { header: { type: 'text', text: input.header.slice(0, 60) } } : {}),
+        body: { text: input.body },
+        ...(input.footer ? { footer: { type: 'text', text: input.footer.slice(0, 60) } } : {}),
+        action: {
+          button: input.buttonText.slice(0, 20),
+          sections: [{
+            rows: input.rows.slice(0, 10).map(r => ({
+              id: r.id,
+              title: r.title.slice(0, 24),
+              ...(r.description ? { description: r.description.slice(0, 72) } : {}),
+            })),
+          }],
         },
       },
     }

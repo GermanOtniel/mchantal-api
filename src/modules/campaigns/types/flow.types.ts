@@ -41,7 +41,19 @@ export type FreeTextNode = {
   assignment?: AssignmentDirective
 }
 
-export type FlowNode = InteractiveButtonsNode | TextMessageNode | TextInputNode | FreeTextNode
+export type ListMessageNode = {
+  id: string
+  type: 'list_message'
+  body: string
+  buttonText: string
+  header?: string
+  footer?: string
+  rows: { id: string; title: string; description?: string }[]
+  transitions: Record<string, string>
+  onFreeText?: 'reprompt'
+}
+
+export type FlowNode = InteractiveButtonsNode | ListMessageNode | TextMessageNode | TextInputNode | FreeTextNode
 
 export type FlowDefinition = { nodes: Record<string, FlowNode>; entryNodeId?: string }
 
