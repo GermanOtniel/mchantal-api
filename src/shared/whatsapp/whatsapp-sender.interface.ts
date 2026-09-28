@@ -1,6 +1,8 @@
 import type {
   SendInteractiveButtonsInput,
   SendInteractiveButtonsResult,
+  SendListMessageInput,
+  SendListMessageResult,
   SendMediaMessageInput,
   SendMediaMessageResult,
   SendTextMessageInput,
@@ -17,4 +19,5 @@ export interface WhatsAppSender {
     input: SendInteractiveButtonsInput
   ): Promise<SendInteractiveButtonsResult>
   sendMediaMessage(input: SendMediaMessageInput): Promise<SendMediaMessageResult>
+  sendListMessage(input: SendListMessageInput): Promise<SendListMessageResult>
 }

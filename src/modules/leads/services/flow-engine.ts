@@ -3,6 +3,7 @@ import type { NormalizedMessage } from '../../../shared/whatsapp/types/inbound.t
 import type {
   FlowDefinition,
   InteractiveButtonsNode,
+  ListMessageNode,
   TextMessageNode,
   TextInputNode,
   FreeTextNode,
@@ -220,7 +221,7 @@ export class FlowEngine {
     const currentNode = flow.nodes[flowState.currentNodeId]
     if (!currentNode) return
 
-    if (currentNode.type === 'interactive_buttons') {
+    if (currentNode.type === 'interactive_buttons' || currentNode.type === 'list_message') {
       const replyId = ctx.message.interactiveReplyId
       if (replyId && currentNode.transitions[replyId]) {
         const prevAnswers = (flowState.context.answers as Record<string, string> | undefined) ?? {}
@@ -351,6 +352,8 @@ export class FlowEngine {
 
     if (node.type === 'interactive_buttons') {
       await this.sendInteractive(sender, ctx, flowState, node)
+    } else if (node.type === 'list_message') {
+      await this.sendListMessage(sender, ctx, flowState, node)
     } else if (node.type === 'text_message') {
       await this.sendText(sender, ctx, flowState, node.body, { nodeId: node.id })
       await this.maybeAssign(lead, flowState, (node as TextMessageNode).assignment)
@@ -401,6 +404,29 @@ export class FlowEngine {
       type: 'interactive_buttons',
       bodyText: body,
       metadata: { nodeId: node.id, buttons: node.buttons },
+    })
+  }
+
+  private async sendListMessage(
+    sender: WhatsAppSender,
+    ctx: InboundFlowContext,
+    flowState: LeadFlowStateData,
+    node: ListMessageNode
+  ): Promise<void> {
+    const body = interpolate(node.body, String(flowState.context.folio ?? ''), flowState.context)
+    const result = await sender.sendListMessage({
+      toWaId: ctx.waId,
+      body,
+      buttonText: node.buttonText,
+      header: node.header,
+      footer: node.footer,
+      rows: node.rows,
+    })
+    await this.persistOutbound(ctx, {
+      providerMessageId: result.providerMessageId,
+      type: 'list_message',
+      bodyText: body,
+      metadata: { nodeId: node.id, rows: node.rows },
     })
   }
 
@@ -501,12 +527,12 @@ function extractFolio(message: NormalizedMessage): string | null {
 
 function findFirstInteractiveNode(flow: FlowDefinition): string | null {
   const nodes = flow.nodes ?? {}
-  if (flow.entryNodeId && nodes[flow.entryNodeId]?.type === 'interactive_buttons') {
+  if (flow.entryNodeId && (nodes[flow.entryNodeId]?.type === 'interactive_buttons' || nodes[flow.entryNodeId]?.type === 'list_message')) {
     return flow.entryNodeId
   }
   const welcome = nodes['welcome']
-  if (welcome && welcome.type === 'interactive_buttons') return 'welcome'
-  const node = Object.values(nodes).find((n) => n.type === 'interactive_buttons')
+  if (welcome && (welcome.type === 'interactive_buttons' || welcome.type === 'list_message')) return 'welcome'
+  const node = Object.values(nodes).find((n) => n.type === 'interactive_buttons' || n.type === 'list_message')
   return node?.id ?? null
 }
 

@@ -2,6 +2,8 @@ import type { NormalizedInboundEvent, DownloadMediaResult } from './types/inboun
 import type {
   SendInteractiveButtonsInput,
   SendInteractiveButtonsResult,
+  SendListMessageInput,
+  SendListMessageResult,
   SendMediaMessageInput,
   SendMediaMessageResult,
   SendTextMessageInput,

@@ -57,8 +57,8 @@ function msg(over: Partial<NormalizedMessage>): NormalizedMessage {
   }
 }
 
-function makeSender(): { sender: WhatsAppSender; sent: { kind: 'text' | 'buttons'; toWaId: string; body: string; buttons?: { id: string; title: string }[] }[] } {
-  const sent: { kind: 'text' | 'buttons'; toWaId: string; body: string; buttons?: { id: string; title: string }[] }[] = []
+function makeSender(): { sender: WhatsAppSender; sent: { kind: 'text' | 'buttons' | 'list'; toWaId: string; body: string; buttons?: { id: string; title: string }[]; rows?: { id: string; title: string; description?: string }[]; buttonText?: string; header?: string; footer?: string }[] } {
+  const sent: { kind: 'text' | 'buttons' | 'list'; toWaId: string; body: string; buttons?: { id: string; title: string }[]; rows?: { id: string; title: string; description?: string }[]; buttonText?: string; header?: string; footer?: string }[] = []
   let n = 0
   const sender: WhatsAppSender = {
     sendTextMessage: vi.fn(async (input) => {
@@ -67,6 +67,10 @@ function makeSender(): { sender: WhatsAppSender; sent: { kind: 'text' | 'buttons
     }),
     sendInteractiveButtons: vi.fn(async (input) => {
       sent.push({ kind: 'buttons', toWaId: input.toWaId, body: input.body, buttons: input.buttons })
+      return { providerMessageId: `out-${++n}` }
+    }),
+    sendListMessage: vi.fn(async (input) => {
+      sent.push({ kind: 'list', toWaId: input.toWaId, body: input.body, rows: input.rows, buttonText: input.buttonText, header: input.header, footer: input.footer })
       return { providerMessageId: `out-${++n}` }
     }),
   }
@@ -1623,5 +1627,246 @@ describe('FlowEngine — re-engagement: reactivación del lead (loop fix)', () =
     expect(deps.campaigns.findActiveBase).not.toHaveBeenCalled()
     expect(deps.campaignLeads.create).not.toHaveBeenCalled()
     expect(sent).toHaveLength(0)
+  })
+})
+
+// ── list_message flow engine tests ──
+
+function listMessageFlow(): FlowDefinition {
+  return {
+    nodes: {
+      welcome: {
+        id: 'welcome',
+        type: 'list_message',
+        body: 'Hola {{folio}}, ¿qué te interesa?',
+        buttonText: 'Ver opciones',
+        header: 'Encuesta',
+        rows: [
+          { id: 'r1', title: 'Maquillaje', description: 'Labiales, bases' },
+          { id: 'r2', title: 'Skincare' },
+        ],
+        transitions: { r1: 'closing_makeup', r2: 'closing_skincare' },
+        onFreeText: 'reprompt',
+      },
+      closing_makeup: { id: 'closing_makeup', type: 'text_message', body: '¡Gracias {{folio}}! Te contactaremos sobre maquillaje 🌸' },
+      closing_skincare: { id: 'closing_skincare', type: 'text_message', body: '¡Gracias {{folio}}! Te contactaremos sobre skincare 🧴' },
+    },
+  }
+}
+
+function listMessageCapture(flow: FlowDefinition): LeadCaptureData {
+  return {
+    id: 'cap1', folio: FOLIO, campaignId: 'camp1',
+    campaign: { id: 'camp1', flowDefinition: flow },
+    status: 'pending', campaignLeadId: null, origin: 'unknown',
+  }
+}
+
+function listMessageDeps(flow: FlowDefinition): FlowEngineDeps {
+  const capture = listMessageCapture(flow)
+  return makeDeps({
+    captures: { findPendingByFolio: vi.fn(async () => capture), markMatched: vi.fn(async () => {}) },
+    campaignLeads: {
+      findByContactAndCampaign: vi.fn(async () => null),
+      create: vi.fn(async (d) => ({
+        id: 'lead1',
+        contactId: d.contactId,
+        campaignId: d.campaignId,
+        campaign: { id: d.campaignId, flowDefinition: flow },
+        context: d.context,
+        origin: d.origin ?? 'unknown',
+      })),
+      findById: vi.fn(async () => null),
+      findTerminalByContactId: vi.fn(async () => []),
+      save: vi.fn(async (l) => l),
+    },
+  })
+}
+
+describe('FlowEngine — list_message executeNode', () => {
+  it('inscripción por folio con list_message como entry: llama sendListMessage con body, buttonText, rows', async () => {
+    const flow = listMessageFlow()
+    const deps = listMessageDeps(flow)
+    const { sender, sent } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: `mi folio es ${FOLIO}` }) }))
+
+    expect(sender.sendListMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toWaId: '12345',
+        body: 'Hola MC-ABCDE, ¿qué te interesa?',
+        buttonText: 'Ver opciones',
+        header: 'Encuesta',
+        rows: (flow.nodes.welcome as { rows: { id: string; title: string; description?: string }[] }).rows,
+      })
+    )
+    expect(deps.messages.create).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: 'conv1', direction: 'outbound', type: 'list_message' })
+    )
+    expect(sent).toHaveLength(1)
+    expect(sent[0].kind).toBe('list')
+  })
+
+  it('persistOutbound registra type list_message y metadata con nodeId y rows', async () => {
+    const flow = listMessageFlow()
+    const deps = listMessageDeps(flow)
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: `mi folio es ${FOLIO}` }) }))
+
+    const createArg = (deps.messages.create as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(createArg.type).toBe('list_message')
+    expect(createArg.metadata.nodeId).toBe('welcome')
+    expect(createArg.metadata.rows).toEqual((flow.nodes.welcome as { rows: { id: string; title: string; description?: string }[] }).rows)
+  })
+
+  it('interpola {{folio}} en el body del list_message', async () => {
+    const flow = listMessageFlow()
+    const deps = listMessageDeps(flow)
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: `mi folio es ${FOLIO}` }) }))
+
+    expect(sender.sendListMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ body: 'Hola MC-ABCDE, ¿qué te interesa?' })
+    )
+  })
+})
+
+describe('FlowEngine — list_message processFlowInput', () => {
+  it('reply con interactiveReplyId que coincide con un rowId → guarda answer y avanza', async () => {
+    const flow = listMessageFlow()
+    const { lead, state } = leadAndState(flow, 'welcome')
+    const deps = wireLead(lead, state)
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({
+      message: msg({ type: 'interactive', interactiveReplyId: 'r1', interactiveReplyTitle: 'Maquillaje', interactiveType: 'list_reply' }),
+    }))
+
+    expect((state.context.answers as Record<string, string>).welcome).toBe('r1')
+    expect(state.currentNodeId).toBe('closing_makeup')
+    expect(sender.sendTextMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ text: '¡Gracias MC-ABCDE! Te contactaremos sobre maquillaje 🌸' })
+    )
+  })
+
+  it('reply con interactiveReplyId que no coincide con ningún row → no hace nada (espera)', async () => {
+    const flow = listMessageFlow()
+    const { lead, state } = leadAndState(flow, 'welcome')
+    const deps = wireLead(lead, state)
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({
+      message: msg({ type: 'interactive', interactiveReplyId: 'r99', interactiveReplyTitle: 'No existe', interactiveType: 'list_reply' }),
+    }))
+
+    expect((state.context.answers as Record<string, string>)).toEqual({})
+    expect(state.currentNodeId).toBe('welcome')
+    expect(sender.sendListMessage).not.toHaveBeenCalled()
+    expect(sender.sendTextMessage).not.toHaveBeenCalled()
+  })
+
+  it('texto libre con onFreeText reprompt → reenvía el list_message', async () => {
+    const flow = listMessageFlow()
+    const { lead, state } = leadAndState(flow, 'welcome')
+    const deps = wireLead(lead, state)
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'hola' }) }))
+
+    expect(sender.sendListMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ body: 'Hola MC-ABCDE, ¿qué te interesa?' })
+    )
+    expect(state.currentNodeId).toBe('welcome')
+    expect((state.context.answers as Record<string, string>)).toEqual({})
+  })
+
+  it('texto libre con onFreeText undefined → reprompt (comportamiento default)', async () => {
+    const flow = listMessageFlow()
+    delete (flow.nodes.welcome as { onFreeText?: string }).onFreeText
+    const { lead, state } = leadAndState(flow, 'welcome')
+    const deps = wireLead(lead, state)
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: 'hola' }) }))
+
+    expect(sender.sendListMessage).toHaveBeenCalled()
+    expect(state.currentNodeId).toBe('welcome')
+  })
+
+  it('guarda el answer como { [nodeId]: replyId } (mismo patrón que interactive_buttons)', async () => {
+    const flow = listMessageFlow()
+    const { lead, state } = leadAndState(flow, 'welcome')
+    const deps = wireLead(lead, state)
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({
+      message: msg({ type: 'interactive', interactiveReplyId: 'r2', interactiveReplyTitle: 'Skincare', interactiveType: 'list_reply' }),
+    }))
+
+    expect((state.context.answers as Record<string, string>).welcome).toBe('r2')
+    expect(state.currentNodeId).toBe('closing_skincare')
+  })
+})
+
+describe('FlowEngine — findFirstInteractiveNode acepta list_message', () => {
+  it('entryNodeId apuntando a list_message → retorna ese id', async () => {
+    const flow = { ...listMessageFlow(), entryNodeId: 'welcome' }
+    const deps = listMessageDeps(flow as FlowDefinition)
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: `mi folio es ${FOLIO}` }) }))
+
+    expect(deps.flowStates.create).toHaveBeenCalledWith(
+      expect.objectContaining({ currentNodeId: 'welcome' })
+    )
+    expect(sender.sendListMessage).toHaveBeenCalled()
+  })
+
+  it('welcome siendo list_message → retorna welcome', async () => {
+    const flow = listMessageFlow()
+    const deps = listMessageDeps(flow)
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: `mi folio es ${FOLIO}` }) }))
+
+    expect(deps.flowStates.create).toHaveBeenCalledWith(
+      expect.objectContaining({ currentNodeId: 'welcome' })
+    )
+    expect(sender.sendListMessage).toHaveBeenCalled()
+  })
+
+  it('primer nodo interactivo siendo list_message (sin welcome ni entryNodeId) → retorna su id', async () => {
+    const flow: FlowDefinition = {
+      nodes: {
+        q1: {
+          id: 'q1', type: 'list_message', body: '¿?', buttonText: 'Abrir',
+          rows: [{ id: 'r1', title: 'O1' }],
+          transitions: { r1: 'closing' },
+        },
+        closing: { id: 'closing', type: 'text_message', body: 'bye' },
+      },
+    }
+    const deps = listMessageDeps(flow)
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: `mi folio es ${FOLIO}` }) }))
+
+    expect(deps.flowStates.create).toHaveBeenCalledWith(
+      expect.objectContaining({ currentNodeId: 'q1' })
+    )
+    expect(sender.sendListMessage).toHaveBeenCalled()
   })
 })

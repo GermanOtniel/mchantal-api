@@ -18,6 +18,19 @@ export type SendInteractiveButtonsResult = {
   providerMessageId: string
 }
 
+export type SendListMessageInput = {
+  toWaId: string
+  body: string
+  buttonText: string
+  header?: string
+  footer?: string
+  rows: Array<{ id: string; title: string; description?: string }>
+}
+
+export type SendListMessageResult = {
+  providerMessageId: string
+}
+
 export type WebhookSubscriptionQuery = {
   mode?: string
   verifyToken?: string

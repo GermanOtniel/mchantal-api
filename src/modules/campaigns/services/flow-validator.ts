@@ -4,6 +4,7 @@ import type {
   FlowDefinition,
   FlowNode,
   InteractiveButtonsNode,
+  ListMessageNode,
   TextInputNode,
   FreeTextNode,
   TextMessageNode,
@@ -14,12 +15,14 @@ export type {
   FlowDefinition,
   FlowNode,
   InteractiveButtonsNode,
+  ListMessageNode,
   TextInputNode,
   TextMessageNode,
   ValidationIssue,
 } from '../types/flow.types'
 
 const MAX_BUTTONS = 3
+const MAX_LIST_ROWS = 10
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -47,8 +50,8 @@ export function validateFlowDefinition(flow: unknown): ValidationIssue[] {
   const entryNodeIdRaw = (flow as { entryNodeId?: unknown } | null)?.entryNodeId
   if (entryNodeIdRaw !== undefined) {
     const target = nodes[entryNodeIdRaw as string] as { type?: string } | undefined
-    if (!target || target.type !== 'interactive_buttons') {
-      issues.push(issue('flow.entryNodeId', 'ENTRY_NODE_INVALID', 'entryNodeId no apunta a un nodo interactive_buttons existente.'))
+    if (!target || (target.type !== 'interactive_buttons' && target.type !== 'list_message')) {
+      issues.push(issue('flow.entryNodeId', 'ENTRY_NODE_INVALID', 'entryNodeId no apunta a un nodo interactive_buttons o list_message existente.'))
     }
   }
 
@@ -65,6 +68,8 @@ export function validateFlowDefinition(flow: unknown): ValidationIssue[] {
 
     if (node.type === 'interactive_buttons') {
       validateInteractive(base, node as unknown as InteractiveButtonsNode, nodeIds, issues)
+    } else if (node.type === 'list_message') {
+      validateListMessage(base, node as unknown as ListMessageNode, nodeIds, issues)
     } else if (node.type === 'text_message') {
       validateText(base, node as unknown as TextMessageNode, nodeIds, issues)
     } else if (node.type === 'text_input') {
@@ -76,7 +81,7 @@ export function validateFlowDefinition(flow: unknown): ValidationIssue[] {
 
   const entry = resolveEntry(nodes, entryNodeIdRaw as string | undefined)
   if (!entry) {
-    issues.push(issue('flow.nodes', 'ENTRY_NODE_MISSING', 'Debe existir al menos un nodo interactive_buttons (entrada).'))
+    issues.push(issue('flow.nodes', 'ENTRY_NODE_MISSING', 'Debe existir al menos un nodo interactive_buttons o list_message (entrada).'))
   } else {
     detectCycles(nodes as Record<string, unknown>, entry, issues)
     detectAssignmentWarnings(nodes as Record<string, unknown>, entry, issues)
@@ -85,16 +90,16 @@ export function validateFlowDefinition(flow: unknown): ValidationIssue[] {
   return issues
 }
 
-/** Resuelve el nodo de entrada: entryNodeId (válido) → 'welcome' (si es interactive) → primer interactive. */
+/** Resuelve el nodo de entrada: entryNodeId (válido) → 'welcome' (si es interactive/list) → primer interactive/list. */
 function resolveEntry(nodes: Record<string, unknown>, entryNodeId?: string): string | null {
   if (entryNodeId) {
     const n = nodes[entryNodeId] as { type?: string } | undefined
-    if (n && n.type === 'interactive_buttons') return entryNodeId
+    if (n && (n.type === 'interactive_buttons' || n.type === 'list_message')) return entryNodeId
   }
   const welcome = nodes['welcome'] as { type?: string } | undefined
-  if (welcome && welcome.type === 'interactive_buttons') return 'welcome'
+  if (welcome && (welcome.type === 'interactive_buttons' || welcome.type === 'list_message')) return 'welcome'
   const first = (Object.values(nodes) as { id?: string; type?: string }[]).find(
-    (n) => isPlainObject(n) && n.type === 'interactive_buttons'
+    (n) => isPlainObject(n) && (n.type === 'interactive_buttons' || n.type === 'list_message')
   )
   return first?.id ?? null
 }
@@ -130,6 +135,80 @@ function validateInteractive(
       issues.push(issue(`${base}.transitions.${btn.id}`, 'NODE_REF_NOT_FOUND', `La transición del botón "${btn.id}" apunta a un nodo inexistente ("${target}").`))
     }
   }
+  if (node.onFreeText !== undefined && node.onFreeText !== 'reprompt') {
+    issues.push(issue(`${base}.onFreeText`, 'ON_FREE_TEXT_UNSUPPORTED', `onFreeText "${String(node.onFreeText)}" no es soportado en este slice (solo "reprompt").`))
+  }
+}
+
+function validateListMessage(
+  base: string,
+  node: ListMessageNode,
+  nodeIds: Set<string>,
+  issues: ValidationIssue[]
+): void {
+  // body
+  if (typeof node.body !== 'string' || node.body.trim() === '') {
+    issues.push(issue(`${base}.body`, 'LIST_BODY_EMPTY', 'El body de list_message no puede estar vacío.'))
+  } else if (node.body.length > 1024) {
+    issues.push(issue(`${base}.body`, 'LIST_BODY_TOO_LONG', 'El body excede 1024 caracteres.'))
+  }
+
+  // buttonText
+  if (typeof node.buttonText !== 'string' || node.buttonText.trim() === '') {
+    issues.push(issue(`${base}.buttonText`, 'LIST_BUTTON_TEXT_EMPTY', 'buttonText no puede estar vacío.'))
+  } else if (node.buttonText.length > 20) {
+    issues.push(issue(`${base}.buttonText`, 'LIST_BUTTON_TEXT_TOO_LONG', 'buttonText excede 20 caracteres.'))
+  }
+
+  // header
+  if (node.header !== undefined && typeof node.header === 'string' && node.header.length > 60) {
+    issues.push(issue(`${base}.header`, 'LIST_HEADER_TOO_LONG', 'header excede 60 caracteres.'))
+  }
+
+  // footer
+  if (node.footer !== undefined && typeof node.footer === 'string' && node.footer.length > 60) {
+    issues.push(issue(`${base}.footer`, 'LIST_FOOTER_TOO_LONG', 'footer excede 60 caracteres.'))
+  }
+
+  // rows
+  const rows = node.rows
+  if (!Array.isArray(rows) || rows.length === 0) {
+    issues.push(issue(`${base}.rows`, 'LIST_ROWS_EMPTY', 'La lista debe tener al menos 1 opción.'))
+    // Still validate onFreeText and transitions if possible
+  } else {
+    if (rows.length > MAX_LIST_ROWS) {
+      issues.push(issue(`${base}.rows`, 'LIST_ROWS_TOO_MANY', `La lista tiene ${rows.length} opciones; el máximo es ${MAX_LIST_ROWS}.`))
+    }
+    const seenRowIds = new Set<string>()
+    for (const row of rows) {
+      if (typeof row.title !== 'string' || row.title.trim() === '') {
+        issues.push(issue(`${base}.rows`, 'LIST_ROW_TITLE_EMPTY', 'Toda opción debe tener un título no vacío.'))
+      } else if (row.title.length > 24) {
+        issues.push(issue(`${base}.rows`, 'LIST_ROW_TITLE_TOO_LONG', 'El título de la opción excede 24 caracteres.'))
+      }
+      if (row.description !== undefined && typeof row.description === 'string' && row.description.length > 72) {
+        issues.push(issue(`${base}.rows`, 'LIST_ROW_DESCRIPTION_TOO_LONG', 'La descripción de la opción excede 72 caracteres.'))
+      }
+      if (seenRowIds.has(row.id)) {
+        issues.push(issue(`${base}.rows`, 'LIST_ROW_ID_DUPLICATE', `El id de opción "${row.id}" está repetido.`))
+      }
+      seenRowIds.add(row.id)
+    }
+  }
+
+  // transitions — each row must have a transition pointing to an existing node
+  const transitions = node.transitions ?? {}
+  const rowsForTransitions = Array.isArray(rows) ? rows : []
+  for (const row of rowsForTransitions) {
+    const target = transitions[row.id]
+    if (target === undefined || target === '') {
+      issues.push(issue(`${base}.transitions.${row.id}`, 'BRANCH_NOT_TERMINATED', `La opción "${row.id}" no conduce a ningún nodo (falta cierre).`))
+    } else if (!nodeIds.has(target)) {
+      issues.push(issue(`${base}.transitions.${row.id}`, 'NODE_REF_NOT_FOUND', `La transición de la opción "${row.id}" apunta a un nodo inexistente ("${target}").`))
+    }
+  }
+
+  // onFreeText
   if (node.onFreeText !== undefined && node.onFreeText !== 'reprompt') {
     issues.push(issue(`${base}.onFreeText`, 'ON_FREE_TEXT_UNSUPPORTED', `onFreeText "${String(node.onFreeText)}" no es soportado en este slice (solo "reprompt").`))
   }
@@ -232,7 +311,7 @@ function detectCycles(
   const color = new Map<string, number>()
 
   const dfs = (id: string): boolean => {
-    const node = nodes[id] as { type?: string; buttons?: { id: string }[]; transitions?: Record<string, string>; nextNodeId?: string; fallback?: { transition: string } | string; defaultTransition?: string } | undefined
+    const node = nodes[id] as { type?: string; buttons?: { id: string }[]; rows?: { id: string }[]; transitions?: Record<string, string>; nextNodeId?: string; fallback?: { transition: string } | string; defaultTransition?: string } | undefined
     if (!node || !isPlainObject(node)) return false
     const c = color.get(id) ?? WHITE
     if (c === GRAY) {
@@ -245,6 +324,11 @@ function detectCycles(
     if (node.type === 'interactive_buttons') {
       for (const btn of node.buttons ?? []) {
         const t = node.transitions?.[btn.id]
+        if (t && nodes[t] && dfs(t)) { cycle = true; break }
+      }
+    } else if (node.type === 'list_message') {
+      for (const row of node.rows ?? []) {
+        const t = node.transitions?.[row.id]
         if (t && nodes[t] && dfs(t)) { cycle = true; break }
       }
     } else if (node.type === 'text_message') {
@@ -298,7 +382,7 @@ function detectAssignmentWarnings(
     // no tiene override. Esto puede sobre-avisar en ramas que sí tienen override
     // (están asignadas en runtime) — dirección conservadora: sobre-avisar > falso negativo.
     if (t === 'text_input') return !!node.assignment
-    return false // interactive_buttons no lleva asignación
+    return false // interactive_buttons / list_message no lleva asignación
   }
 
   const isTerminal = (node: unknown): boolean => {
@@ -324,6 +408,14 @@ function detectAssignmentWarnings(
       if (Array.isArray(node.buttons) && isPlainObject(trans)) {
         for (const btn of node.buttons as { id: string }[]) {
           const tgt = trans[btn.id]
+          if (typeof tgt === 'string') out.push(tgt)
+        }
+      }
+    } else if (t === 'list_message') {
+      const trans = node.transitions
+      if (Array.isArray(node.rows) && isPlainObject(trans)) {
+        for (const row of node.rows as { id: string }[]) {
+          const tgt = trans[row.id]
           if (typeof tgt === 'string') out.push(tgt)
         }
       }
