@@ -28,12 +28,12 @@ import type { LeadFlowStateRepositoryPort } from '../types/leads.types'
 // Replica local de findFirstInteractiveNode del FlowEngine (sin importar flow-engine para evitar acoplamiento).
 function findFirstInteractiveNode(flow: FlowDefinition): string | null {
   const nodes = flow.nodes ?? {}
-  if (flow.entryNodeId && nodes[flow.entryNodeId]?.type === 'interactive_buttons') {
+  if (flow.entryNodeId && (nodes[flow.entryNodeId]?.type === 'interactive_buttons' || nodes[flow.entryNodeId]?.type === 'list_message')) {
     return flow.entryNodeId
   }
   const welcome = nodes['welcome']
-  if (welcome && welcome.type === 'interactive_buttons') return 'welcome'
-  const node = Object.values(nodes).find((n) => n.type === 'interactive_buttons')
+  if (welcome && (welcome.type === 'interactive_buttons' || welcome.type === 'list_message')) return 'welcome'
+  const node = Object.values(nodes).find((n) => n.type === 'interactive_buttons' || n.type === 'list_message')
   return node?.id ?? null
 }
 
@@ -214,6 +214,14 @@ export class LeadsService {
         if (replyId === undefined) break
         const btn = node.buttons.find((b) => b.id === replyId)
         qa.push({ storeAs: node.id, prompt: node.body, value: btn?.title ?? replyId })
+        nodeId = node.transitions[replyId]
+        continue
+      }
+      if (node.type === 'list_message') {
+        const replyId = answers[node.id]
+        if (replyId === undefined) break
+        const row = node.rows.find((r) => r.id === replyId)
+        qa.push({ storeAs: node.id, prompt: node.body, value: row?.title ?? replyId })
         nodeId = node.transitions[replyId]
         continue
       }

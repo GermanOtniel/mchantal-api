@@ -412,6 +412,36 @@ const welcomeToBridgeNode = {
   buttons: [{ id: 'comprar', title: 'Quiero comprar' }],
   transitions: { comprar: 'bridge' },
 }
+// Welcome simple → list_message (n4) para tests de Q&A con list.
+const welcomeToListNode = {
+  id: 'welcome',
+  type: 'interactive_buttons' as const,
+  body: 'Hola',
+  buttons: [{ id: 'start', title: 'Empezar' }],
+  transitions: { start: 'n4' },
+}
+const listMessageNode = {
+  id: 'n4',
+  type: 'list_message' as const,
+  body: '¿Qué producto te interesa?',
+  buttonText: 'Ver opciones',
+  rows: [
+    { id: 'skincare', title: 'Skincare' },
+    { id: 'maquillaje', title: 'Maquillaje' },
+    { id: 'perfumes', title: 'Perfumes' },
+  ],
+  transitions: { skincare: 'closing_skincare', maquillaje: 'closing_maquillaje' },
+}
+const closingSkincareNode = {
+  id: 'closing_skincare',
+  type: 'text_message' as const,
+  body: '¡Te contactaremos sobre skincare!',
+}
+const closingMaquillajeNode = {
+  id: 'closing_maquillaje',
+  type: 'text_message' as const,
+  body: '¡Te contactaremos sobre maquillaje!',
+}
 
 function convData(over: Partial<ConversationData> = {}): ConversationData {
   return {
@@ -563,6 +593,65 @@ describe('LeadsService.getLead', () => {
       { storeAs: 'welcome', prompt: 'Hola', value: 'Empezar' },
       { storeAs: 'city', prompt: '¿Cuál es tu ciudad?', value: 'Ciudad de México' },
       { storeAs: 'n3', prompt: '¿Cómo te enteraste?', value: 'Vi una promoción' },
+    ])
+  })
+
+  it('Q&A con list_message → resuelve title desde el row id', async () => {
+    const leadsRepo = mkLeadsRepo({
+      findById: vi.fn(async () => leadData({
+        campaign: { id: 'c1', name: 'Campaña 1', flowDefinition: { nodes: { n4: listMessageNode } } },
+      })),
+    })
+    const flowStates = mkFlowStateRepo({
+      findByCampaignLeadId: vi.fn(async () => flowStateData({ context: { answers: { n4: 'skincare' } } })),
+    })
+    const svc = mkSvc({ leadsRepo, flowStates })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.answers).toEqual([{ storeAs: 'n4', prompt: '¿Qué producto te interesa?', value: 'Skincare' }])
+  })
+
+  it('Q&A con list_message: row id no listado → value = replyId crudo', async () => {
+    const leadsRepo = mkLeadsRepo({
+      findById: vi.fn(async () => leadData({
+        campaign: { id: 'c1', name: 'Campaña 1', flowDefinition: { nodes: { n4: listMessageNode } } },
+      })),
+    })
+    const flowStates = mkFlowStateRepo({
+      findByCampaignLeadId: vi.fn(async () => flowStateData({ context: { answers: { n4: 'otro' } } })),
+    })
+    const svc = mkSvc({ leadsRepo, flowStates })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.answers).toEqual([{ storeAs: 'n4', prompt: '¿Qué producto te interesa?', value: 'otro' }])
+  })
+
+  it('Q&A con list_message: sin selección (answers[n4] undefined) → no aparece', async () => {
+    const leadsRepo = mkLeadsRepo({
+      findById: vi.fn(async () => leadData({
+        campaign: { id: 'c1', name: 'Campaña 1', flowDefinition: { nodes: { n4: listMessageNode } } },
+      })),
+    })
+    const flowStates = mkFlowStateRepo({
+      findByCampaignLeadId: vi.fn(async () => flowStateData({ context: { answers: {} } })),
+    })
+    const svc = mkSvc({ leadsRepo, flowStates })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.answers).toEqual([])
+  })
+
+  it('Q&A mixto: welcome → list_message → text_message (closing) en orden', async () => {
+    const leadsRepo = mkLeadsRepo({
+      findById: vi.fn(async () => leadData({
+        campaign: { id: 'c1', name: 'Campaña 1', flowDefinition: { nodes: { welcome: welcomeToListNode, n4: listMessageNode, closing_skincare: closingSkincareNode, closing_maquillaje: closingMaquillajeNode } } },
+      })),
+    })
+    const flowStates = mkFlowStateRepo({
+      findByCampaignLeadId: vi.fn(async () => flowStateData({ context: { answers: { welcome: 'start', n4: 'maquillaje' } } })),
+    })
+    const svc = mkSvc({ leadsRepo, flowStates })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.answers).toEqual([
+      { storeAs: 'welcome', prompt: 'Hola', value: 'Empezar' },
+      { storeAs: 'n4', prompt: '¿Qué producto te interesa?', value: 'Maquillaje' },
     ])
   })
 
