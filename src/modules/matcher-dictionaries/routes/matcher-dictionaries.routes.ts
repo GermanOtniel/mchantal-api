@@ -30,7 +30,7 @@ export const matcherDictionariesPlugin: FastifyPluginAsyncTypebox = async (app) 
   app.get(
     '/',
     {
-      preHandler: requirePermission(PERMISSIONS.MATCHER_DICTIONARIES_MANAGE),
+      preHandler: requirePermission(PERMISSIONS.MATCHER_DICTIONARIES_READ, PERMISSIONS.MATCHER_DICTIONARIES_MANAGE),
       schema: { response: { 200: DictionaryListResponseSchema } },
     },
     controller.list
@@ -39,7 +39,7 @@ export const matcherDictionariesPlugin: FastifyPluginAsyncTypebox = async (app) 
   app.get(
     '/:id',
     {
-      preHandler: requirePermission(PERMISSIONS.MATCHER_DICTIONARIES_MANAGE),
+      preHandler: requirePermission(PERMISSIONS.MATCHER_DICTIONARIES_READ, PERMISSIONS.MATCHER_DICTIONARIES_MANAGE),
       schema: { params: IdParamsSchema, response: { 200: DictionaryResponseSchema, 404: ErrorResponseSchema } },
     },
     controller.getById
