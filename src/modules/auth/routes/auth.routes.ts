@@ -3,6 +3,7 @@ import { getEnv } from '../../../config/env'
 import { createResendMailer } from '../../../shared/email/resend.mailer'
 import { AuthController } from '../controllers/auth.controller'
 import {
+  ChangePasswordBodySchema,
   ErrorResponseSchema,
   ForgotPasswordBodySchema,
   ForgotPasswordResponseSchema,
@@ -116,5 +117,20 @@ export const authPlugin: FastifyPluginAsyncTypebox = async (app) => {
       },
     },
     controller.resetPassword
+  )
+
+  app.post(
+    '/change-password',
+    {
+      preHandler: jwtAuthHook,
+      schema: {
+        body: ChangePasswordBodySchema,
+        response: {
+          400: ErrorResponseSchema,
+          401: ErrorResponseSchema,
+        },
+      },
+    },
+    controller.changePassword
   )
 }

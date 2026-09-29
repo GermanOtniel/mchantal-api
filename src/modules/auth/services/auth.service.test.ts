@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const userRepo = {
   findByEmail: vi.fn(),
   findById: vi.fn(),
+  updatePasswordHash: vi.fn(),
 }
 const refreshRepo = {
   create: vi.fn(),
@@ -87,6 +88,7 @@ describe('AuthService', () => {
     service = new AuthService(env, tokens as unknown as never)
     userRepo.findByEmail.mockReset()
     userRepo.findById.mockReset()
+    userRepo.updatePasswordHash.mockReset()
     refreshRepo.create.mockReset()
     tokens.signAccessToken.mockReset().mockReturnValue('access-token')
     tokens.generateOpaqueToken.mockReset().mockReturnValue('raw-refresh')
@@ -142,5 +144,52 @@ describe('AuthService', () => {
   it('me con usuario inexistente lanza 401', async () => {
     userRepo.findById.mockResolvedValue(null)
     await expect(service.me('nope')).rejects.toBeInstanceOf(HttpError)
+  })
+
+  describe('changePassword', () => {
+    it('actualiza la contraseña cuando la actual es correcta', async () => {
+      userRepo.findById.mockResolvedValue(makeUser())
+      const bcryptCompare = (await import('bcryptjs')).default.compare as ReturnType<typeof vi.fn>
+      bcryptCompare.mockResolvedValue(true)
+
+      await service.changePassword('u1', {
+        currentPassword: 'oldPass123',
+        newPassword: 'newPass456',
+      })
+
+      expect(userRepo.updatePasswordHash).toHaveBeenCalledWith('u1', 'hashed')
+    })
+
+    it('lanza 400 INVALID_CURRENT_PASSWORD cuando la actual es incorrecta', async () => {
+      userRepo.findById.mockResolvedValue(makeUser())
+      const bcryptCompare = (await import('bcryptjs')).default.compare as ReturnType<typeof vi.fn>
+      bcryptCompare.mockResolvedValue(false)
+
+      await expect(
+        service.changePassword('u1', {
+          currentPassword: 'wrongPass',
+          newPassword: 'newPass456',
+        })
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'INVALID_CURRENT_PASSWORD',
+      })
+
+      expect(userRepo.updatePasswordHash).not.toHaveBeenCalled()
+    })
+
+    it('lanza 401 UNAUTHORIZED cuando el usuario no existe', async () => {
+      userRepo.findById.mockResolvedValue(null)
+
+      await expect(
+        service.changePassword('nope', {
+          currentPassword: 'oldPass123',
+          newPassword: 'newPass456',
+        })
+      ).rejects.toMatchObject({
+        statusCode: 401,
+        code: 'UNAUTHORIZED',
+      })
+    })
   })
 })

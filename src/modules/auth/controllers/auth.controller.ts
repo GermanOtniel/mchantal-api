@@ -4,6 +4,7 @@ import { HttpError } from '../http-error'
 import type { AuthService } from '../services/auth.service'
 import type { PasswordResetService } from '../services/password-reset.service'
 import {
+  ChangePasswordBodySchema,
   ForgotPasswordBodySchema,
   LoginBodySchema,
   LogoutBodySchema,
@@ -109,6 +110,21 @@ export class AuthController {
   ) => {
     try {
       await this.passwordResetService.resetPassword(request.body)
+      return reply.code(204).send()
+    } catch (e) {
+      return handleError(reply, e)
+    }
+  }
+
+  changePassword = async (
+    request: FastifyRequest<{ Body: Static<typeof ChangePasswordBodySchema> }>,
+    reply: FastifyReply
+  ) => {
+    try {
+      if (!request.user?.sub) {
+        throw new HttpError('Unauthorized', 401, 'UNAUTHORIZED')
+      }
+      await this.authService.changePassword(request.user.sub, request.body)
       return reply.code(204).send()
     } catch (e) {
       return handleError(reply, e)
