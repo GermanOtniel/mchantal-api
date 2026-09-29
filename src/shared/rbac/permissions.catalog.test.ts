@@ -62,6 +62,16 @@ describe('permissions catalog — leads listing (Scope A)', () => {
     expect(SYSTEM_ROLES.GENERAL_ADMIN.permissionKeys).toContain('leads.filter.assignment')
   })
 
+  it('MATCHER_DICTIONARIES_READ existe con módulo leads y los roles de sistema lo heredan', () => {
+    expect(PERMISSIONS.MATCHER_DICTIONARIES_READ).toBe('matcher_dictionaries.read')
+    const def = PERMISSION_CATALOG.find((p) => p.key === PERMISSIONS.MATCHER_DICTIONARIES_READ)
+    expect(def).toBeDefined()
+    expect(def!.module).toBe('leads')
+    expect(def!.description.length).toBeGreaterThan(0)
+    expect(SYSTEM_ROLES.SUPER_ADMIN.permissionKeys).toContain('matcher_dictionaries.read')
+    expect(SYSTEM_ROLES.GENERAL_ADMIN.permissionKeys).toContain('matcher_dictionaries.read')
+  })
+
   it('ANALYTICS_READ existe con módulo analytics y los roles de sistema lo heredan', () => {
     expect(PERMISSIONS.ANALYTICS_READ).toBe('analytics.read')
     const def = PERMISSION_CATALOG.find((p) => p.key === PERMISSIONS.ANALYTICS_READ)

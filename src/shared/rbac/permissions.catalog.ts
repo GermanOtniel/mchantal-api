@@ -3,6 +3,7 @@ export const PERMISSIONS = {
   USERS_MANAGE: 'users.manage',
   CAMPAIGNS_MANAGE: 'campaigns.manage',
   MATCHER_DICTIONARIES_MANAGE: 'matcher_dictionaries.manage',
+  MATCHER_DICTIONARIES_READ: 'matcher_dictionaries.read',
   LEADS_READ: 'leads.read',
   LEADS_READ_ALL: 'leads.read.all',
   LEADS_FILTER_CAMPAIGN: 'leads.filter.campaign',
@@ -45,6 +46,11 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     key: PERMISSIONS.MATCHER_DICTIONARIES_MANAGE,
     module: 'leads',
     description: 'Crear y editar diccionarios de matchers',
+  },
+  {
+    key: PERMISSIONS.MATCHER_DICTIONARIES_READ,
+    module: 'leads',
+    description: 'Ver diccionarios de matchers (necesario para definir cobertura de ejecutivos)',
   },
   {
     key: PERMISSIONS.LEADS_READ,
