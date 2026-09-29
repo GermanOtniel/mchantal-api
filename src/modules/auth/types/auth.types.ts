@@ -71,6 +71,11 @@ export type ResetPasswordInput = {
   newPassword: string
 }
 
+export type ChangePasswordInput = {
+  currentPassword: string
+  newPassword: string
+}
+
 export function toUserPublic(user: User): UserPublic {
   return {
     id: user.id,

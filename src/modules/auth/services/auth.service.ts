@@ -15,6 +15,7 @@ import type {
   RefreshResult,
   RegisterInput,
   RegisterResult,
+  ChangePasswordInput,
 } from '../types/auth.types'
 import { toUserPublic, type AuthUser } from '../types/auth.types'
 import {
@@ -200,5 +201,20 @@ export class AuthService {
   async logout(input: LogoutInput): Promise<void> {
     const hash = this.tokens.hashOpaqueToken(input.refreshToken)
     await this.refreshRepo.revokeByTokenHash(hash)
+  }
+
+  async changePassword(userId: string, input: ChangePasswordInput): Promise<void> {
+    const user = await this.userRepo.findById(userId)
+    if (!user) {
+      throw new HttpError('Unauthorized', 401, 'UNAUTHORIZED')
+    }
+
+    const ok = await bcrypt.compare(input.currentPassword, user.passwordHash)
+    if (!ok) {
+      throw new HttpError('Current password is incorrect', 400, 'INVALID_CURRENT_PASSWORD')
+    }
+
+    const newHash = await bcrypt.hash(input.newPassword, BCRYPT_ROUNDS)
+    await this.userRepo.updatePasswordHash(userId, newHash)
   }
 }

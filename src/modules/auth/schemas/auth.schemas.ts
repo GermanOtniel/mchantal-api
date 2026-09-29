@@ -74,6 +74,14 @@ export const ResetPasswordBodySchema = Type.Object(
   { additionalProperties: false }
 )
 
+export const ChangePasswordBodySchema = Type.Object(
+  {
+    currentPassword: Type.String({ minLength: 1, maxLength: 128 }),
+    newPassword: Type.String({ minLength: 8, maxLength: 128 }),
+  },
+  { additionalProperties: false }
+)
+
 export const RegisterResponseSchema = Type.Object({
   user: AuthUserSchema,
   accessToken: Type.String(),
