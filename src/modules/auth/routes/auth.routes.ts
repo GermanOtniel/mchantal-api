@@ -1,6 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox'
 import { getEnv } from '../../../config/env'
-import { createNodemailerMailer } from '../../../shared/email/nodemailer.mailer'
+import { createResendMailer } from '../../../shared/email/resend.mailer'
 import { AuthController } from '../controllers/auth.controller'
 import {
   ErrorResponseSchema,
@@ -24,7 +24,7 @@ import { jwtAuthHook } from '../../../shared/auth/jwt-auth.hook'
 export const authPlugin: FastifyPluginAsyncTypebox = async (app) => {
   const env = getEnv()
   const tokens = new TokenService(env)
-  const mailer = createNodemailerMailer(env)
+  const mailer = createResendMailer(env)
   const authService = new AuthService(env, tokens)
   const passwordResetService = new PasswordResetService(env, tokens, mailer)
   const controller = new AuthController(authService, passwordResetService)

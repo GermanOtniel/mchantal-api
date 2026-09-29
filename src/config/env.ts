@@ -27,12 +27,8 @@ export type AppEnv = {
   refreshTokenDays: number
   passwordResetTokenMinutes: number
   frontendPasswordResetUrl: string
-  smtp: {
-    host: string
-    port: number
-    secure: boolean
-    user: string
-    pass: string
+  resend: {
+    apiKey: string
     from: string
   }
   whatsapp: {
@@ -55,13 +51,9 @@ export function getEnv(): AppEnv {
     refreshTokenDays: optionalInt('REFRESH_TOKEN_DAYS', 30),
     passwordResetTokenMinutes: optionalInt('PASSWORD_RESET_TOKEN_MINUTES', 60),
     frontendPasswordResetUrl: required('FRONTEND_PASSWORD_RESET_URL'),
-    smtp: {
-      host: required('SMTP_HOST'),
-      port: optionalInt('SMTP_PORT', 587),
-      secure: optional('SMTP_SECURE', 'false') === 'true',
-      user: required('SMTP_USER'),
-      pass: required('SMTP_PASS'),
-      from: required('SMTP_FROM'),
+    resend: {
+      apiKey: required('RESEND_EMAIL_API_KEY'),
+      from: required('MAIL_FROM'),
     },
     whatsapp: {
       meta: {
