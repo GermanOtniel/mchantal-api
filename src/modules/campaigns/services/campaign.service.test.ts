@@ -221,6 +221,19 @@ describe('CampaignService.createCampaign — base', () => {
     ).rejects.toMatchObject({ code: 'INVALID_FLOW' })
   })
 
+  it('kind=base: list_message como nodo interactivo también es válido', async () => {
+    const repo = makeRepo({ findActiveBase: vi.fn(async () => null) })
+    const svc = new CampaignService(repo)
+    const flowWithList = {
+      nodes: {
+        welcome: { id: 'welcome', type: 'list_message', body: 'Hola', buttonText: 'Ver', rows: [{ id: 'r1', title: 'Opción 1' }], transitions: { r1: 'closing' } },
+        closing: { id: 'closing', type: 'text_message', body: 'Gracias' },
+      },
+    }
+    await svc.createCampaign({ name: 'Base', kind: 'base', flowDefinition: flowWithList as never })
+    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ kind: 'base' }))
+  })
+
   it('kind por defecto es normal', async () => {
     const repo = makeRepo()
     const svc = new CampaignService(repo)
