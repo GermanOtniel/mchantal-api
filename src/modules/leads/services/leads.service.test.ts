@@ -1078,6 +1078,63 @@ describe('LeadsService.changeStatus', () => {
       leadId: 'l1', type: 'status_change', fromValue: 'new', toValue: 'qualified', reason: 'calificado', milestoneKind: null, actorUserId: 'u1',
     }))
   })
+
+  it('cambiar a qualified → setea closedAt', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ status: 'in_progress', closedAt: null })) })
+    const svc = mkSvc({ leadsRepo })
+    await svc.changeStatus({ permissions: perms(PERMISSIONS.LEADS_CHANGE_STATUS, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', status: 'qualified', reason: 'r' })
+    expect(leadsRepo.save).toHaveBeenCalledWith(expect.objectContaining({ status: 'qualified', closedAt: expect.any(Date) }))
+  })
+
+  it('cambiar a disqualified → setea closedAt', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ status: 'in_progress', closedAt: null })) })
+    const svc = mkSvc({ leadsRepo })
+    await svc.changeStatus({ permissions: perms(PERMISSIONS.LEADS_CHANGE_STATUS, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', status: 'disqualified', reason: 'r' })
+    expect(leadsRepo.save).toHaveBeenCalledWith(expect.objectContaining({ status: 'disqualified', closedAt: expect.any(Date) }))
+  })
+
+  it('cambiar qualified → disqualified → actualiza closedAt, permitido', async () => {
+    const oldClosedAt = new Date('2026-01-01')
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ status: 'qualified', closedAt: oldClosedAt })) })
+    const svc = mkSvc({ leadsRepo })
+    await svc.changeStatus({ permissions: perms(PERMISSIONS.LEADS_CHANGE_STATUS, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', status: 'disqualified', reason: 'corrección' })
+    const savedArg = (leadsRepo.save as ReturnType<typeof vi.fn>).mock.calls[0][0] as CampaignLeadData
+    expect(savedArg.status).toBe('disqualified')
+    expect(savedArg.closedAt).toBeInstanceOf(Date)
+    expect(savedArg.closedAt).not.toBe(oldClosedAt)
+  })
+
+  it('cambiar disqualified → qualified → actualiza closedAt, permitido', async () => {
+    const oldClosedAt = new Date('2026-01-01')
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ status: 'disqualified', closedAt: oldClosedAt })) })
+    const svc = mkSvc({ leadsRepo })
+    await svc.changeStatus({ permissions: perms(PERMISSIONS.LEADS_CHANGE_STATUS, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', status: 'qualified', reason: 'corrección' })
+    const savedArg = (leadsRepo.save as ReturnType<typeof vi.fn>).mock.calls[0][0] as CampaignLeadData
+    expect(savedArg.status).toBe('qualified')
+    expect(savedArg.closedAt).toBeInstanceOf(Date)
+    expect(savedArg.closedAt).not.toBe(oldClosedAt)
+  })
+
+  it('cambiar qualified → on_hold → error CLOSED_LEAD_IMMUTABLE', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ status: 'qualified', closedAt: new Date() })) })
+    const svc = mkSvc({ leadsRepo })
+    await expect(svc.changeStatus({ permissions: perms(PERMISSIONS.LEADS_CHANGE_STATUS, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', status: 'on_hold', reason: 'r' })).rejects.toMatchObject({ statusCode: 400, code: 'CLOSED_LEAD_IMMUTABLE' })
+  })
+
+  it('cambiar disqualified → new → error CLOSED_LEAD_IMMUTABLE', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ status: 'disqualified', closedAt: new Date() })) })
+    const svc = mkSvc({ leadsRepo })
+    await expect(svc.changeStatus({ permissions: perms(PERMISSIONS.LEADS_CHANGE_STATUS, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', status: 'new', reason: 'r' })).rejects.toMatchObject({ statusCode: 400, code: 'CLOSED_LEAD_IMMUTABLE' })
+  })
+
+  it('cambiar new → in_progress → no toca closedAt, permitido', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ status: 'new', closedAt: null })) })
+    const svc = mkSvc({ leadsRepo })
+    await svc.changeStatus({ permissions: perms(PERMISSIONS.LEADS_CHANGE_STATUS, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', status: 'in_progress', reason: 'r' })
+    const savedArg = (leadsRepo.save as ReturnType<typeof vi.fn>).mock.calls[0][0] as CampaignLeadData
+    expect(savedArg.status).toBe('in_progress')
+    expect(savedArg.closedAt).toBeNull()
+  })
 })
 
 // ── resumeFlow ──
