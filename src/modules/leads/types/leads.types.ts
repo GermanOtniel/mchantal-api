@@ -38,6 +38,7 @@ export type CampaignLeadData = {
   status: string
   enrolledAt: Date
   origin: string
+  closedAt?: Date | null
 }
 
 export type LeadFlowStateData = {

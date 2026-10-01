@@ -29,6 +29,7 @@ function toData(lead: CampaignLead): CampaignLeadData {
     status: lead.status,
     enrolledAt: lead.enrolledAt,
     origin: lead.origin,
+    closedAt: lead.closedAt,
   }
 }
 
@@ -94,6 +95,7 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
     entity.assignedExecutiveId = lead.assignedExecutiveId ?? null
     entity.assignedAt = lead.assignedAt ?? null
     entity.status = lead.status
+    entity.closedAt = lead.closedAt ?? null
     await this.repo.save(entity)
     return lead
   }
