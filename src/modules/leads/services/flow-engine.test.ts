@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { FlowEngine } from './flow-engine'
+import { FlowEngine, isTerminal, isWithinReopenWindow } from './flow-engine'
 import type { WhatsAppSender } from '../../../shared/whatsapp/whatsapp-sender.interface'
 import type { NormalizedMessage } from '../../../shared/whatsapp/types/inbound.types'
 import type { FlowDefinition } from '../../campaigns/types/flow.types'
@@ -1869,5 +1869,32 @@ describe('FlowEngine — findFirstInteractiveNode acepta list_message', () => {
       expect.objectContaining({ currentNodeId: 'q1' })
     )
     expect(sender.sendListMessage).toHaveBeenCalled()
+  })
+})
+
+// ── Helpers: isTerminal, isWithinReopenWindow ──
+
+describe('FlowEngine — helpers', () => {
+  it('isTerminal: qualified y disqualified son terminales, el resto no', () => {
+    expect(isTerminal('qualified')).toBe(true)
+    expect(isTerminal('disqualified')).toBe(true)
+    expect(isTerminal('new')).toBe(false)
+    expect(isTerminal('in_progress')).toBe(false)
+    expect(isTerminal('on_hold')).toBe(false)
+  })
+
+  it('isWithinReopenWindow: closedAt hace 3 días + ventana 7 días → true', () => {
+    const lead = { closedAt: new Date(Date.now() - 3 * 24 * 3600 * 1000) }
+    expect(isWithinReopenWindow(lead, 168)).toBe(true)
+  })
+
+  it('isWithinReopenWindow: closedAt hace 10 días + ventana 7 días → false', () => {
+    const lead = { closedAt: new Date(Date.now() - 10 * 24 * 3600 * 1000) }
+    expect(isWithinReopenWindow(lead, 168)).toBe(false)
+  })
+
+  it('isWithinReopenWindow: closedAt null → false', () => {
+    const lead = { closedAt: null }
+    expect(isWithinReopenWindow(lead, 168)).toBe(false)
   })
 })

@@ -519,6 +519,16 @@ export class FlowEngine {
   }
 }
 
+export function isTerminal(status: string): boolean {
+  return status === 'qualified' || status === 'disqualified'
+}
+
+export function isWithinReopenWindow(lead: { closedAt?: Date | null }, windowHours: number): boolean {
+  if (!lead.closedAt) return false
+  const elapsed = Date.now() - lead.closedAt.getTime()
+  return elapsed < windowHours * 3600 * 1000
+}
+
 function extractFolio(message: NormalizedMessage): string | null {
   const haystack = [message.text, message.interactiveReplyTitle].filter(Boolean).join(' ')
   const match = haystack.match(FOLIO_REGEX)
