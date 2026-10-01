@@ -115,10 +115,6 @@ export interface CampaignLeadRepositoryPort {
     contactId: string,
     assigneeUserId: string
   ): Promise<boolean>
-  findTerminalByContactId(
-    contactId: string,
-    excludeLeadId: string
-  ): Promise<CampaignLeadData[]>
   findOpenSiblingsByContactId(
     contactId: string,
     excludeLeadId: string,
@@ -349,5 +345,4 @@ export type LeadEventResponse = {
 export interface LeadEventsRepositoryPort {
   record(data: Omit<LeadEventData, 'id' | 'createdAt'> & { createdAt?: Date }): Promise<LeadEventData>
   listByLead(leadId: string): Promise<LeadEventData[]>
-  findLatestStatusChangeLeadId(leadIds: string[]): Promise<string | null>
 }
