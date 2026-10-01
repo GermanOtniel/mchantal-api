@@ -87,6 +87,15 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
     return lead ? toData(lead) : null
   }
 
+  async findMostRecentByContactId(contactId: string): Promise<CampaignLeadData | null> {
+    const lead = await this.repo.findOne({
+      where: { contactId },
+      relations: ['campaign'],
+      order: { enrolledAt: 'DESC' },
+    })
+    return lead ? toData(lead) : null
+  }
+
   async save(lead: CampaignLeadData): Promise<CampaignLeadData> {
     const entity = await this.repo.findOne({ where: { id: lead.id } })
     if (!entity) throw new Error('CampaignLead no encontrado')

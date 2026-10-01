@@ -106,6 +106,7 @@ export interface CampaignLeadRepositoryPort {
   ): Promise<CampaignLeadData | null>
   create(data: CreateCampaignLeadData): Promise<CampaignLeadData>
   findById(id: string): Promise<CampaignLeadData | null>
+  findMostRecentByContactId(contactId: string): Promise<CampaignLeadData | null>
   save(lead: CampaignLeadData): Promise<CampaignLeadData>
   listAll(): Promise<LeadListItem[]>
   listLeads(params: ListLeadsRepoParams): Promise<LeadsRepoPage>

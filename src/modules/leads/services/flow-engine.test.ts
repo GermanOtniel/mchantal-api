@@ -92,6 +92,7 @@ function makeDeps(over: Partial<FlowEngineDeps> = {}): FlowEngineDeps {
         origin: d.origin ?? 'unknown',
       })),
       findById: vi.fn(async () => null),
+      findMostRecentByContactId: vi.fn(async () => null),
       findTerminalByContactId: vi.fn(async () => []),
       save: vi.fn(async (l) => l),
     },
