@@ -257,10 +257,9 @@ export class LeadsService {
 
     const needsReply =
       conversation != null &&
-      conversation.lastMessageDirection === 'inbound' &&
-      conversation.lastMessageAt != null &&
+      conversation.lastInboundAt != null &&
       (conversation.needsReplyClearedAt == null ||
-        conversation.lastMessageAt > conversation.needsReplyClearedAt)
+        conversation.lastInboundAt > conversation.needsReplyClearedAt)
 
     let assignedExecutive: { id: string; fullName: string } | null = null
     if (lead.assignedExecutiveId) {

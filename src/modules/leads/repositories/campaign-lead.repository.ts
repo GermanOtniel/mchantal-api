@@ -47,7 +47,7 @@ function applyLeadFilters(qb: LeadQB, p: ListLeadsRepoParams): void {
     qb.andWhere('(cl.id::text = :qExact OR cl.context->>\'folio\' ILIKE :qLike)', { qExact: p.q, qLike: `%${p.q}%` })
   }
   if (p.needsReply === true) {
-    qb.andWhere(`wc.last_message_direction = 'inbound' AND wc.last_message_at > COALESCE(wc.needs_reply_cleared_at, '-infinity'::timestamptz)`)
+    qb.andWhere(`wc.last_inbound_at IS NOT NULL AND wc.last_inbound_at > COALESCE(wc.needs_reply_cleared_at, '-infinity'::timestamptz)`)
   }
 }
 
@@ -153,7 +153,7 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
       .addSelect('executive.full_name', 'assignedExecutiveName')
       .addSelect('wc.last_inbound_at', 'lastMessageReceivedAt')
       .addSelect(
-        `CASE WHEN wc.last_message_direction = 'inbound' AND wc.last_message_at > COALESCE(wc.needs_reply_cleared_at, '-infinity'::timestamptz) THEN true ELSE false END`,
+        `CASE WHEN wc.last_inbound_at IS NOT NULL AND wc.last_inbound_at > COALESCE(wc.needs_reply_cleared_at, '-infinity'::timestamptz) THEN true ELSE false END`,
         'needsReply'
       )
       .leftJoin('campaigns', 'campaign', 'campaign.id = cl.campaign_id')
@@ -212,7 +212,7 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
     const qb = this.repo
       .createQueryBuilder('cl')
       .leftJoin('whatsapp_conversations', 'wc', "wc.lead_id = cl.id AND wc.status = 'open'")
-      .where(`wc.last_message_direction = 'inbound' AND wc.last_message_at > COALESCE(wc.needs_reply_cleared_at, '-infinity'::timestamptz)`)
+      .where(`wc.last_inbound_at IS NOT NULL AND wc.last_inbound_at > COALESCE(wc.needs_reply_cleared_at, '-infinity'::timestamptz)`)
     if (scopeUserId) {
       qb.andWhere('cl.assigned_executive_id = :scopeUserId', { scopeUserId })
     }

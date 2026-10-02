@@ -730,11 +730,12 @@ describe('LeadsService.getLead', () => {
     expect(res.answers.some((a) => a.prompt === '¿Qué producto te interesa?')).toBe(true)
   })
 
-  it('needsReply true: inbound con lastMessageAt > needsReplyClearedAt', async () => {
+  it('needsReply true: lastInboundAt > needsReplyClearedAt', async () => {
     const convRepo = mkConvRepo({
       findOpenByContactId: vi.fn(async () => convData({
-        lastMessageDirection: 'inbound',
+        lastMessageDirection: 'outbound',
         lastMessageAt: new Date('2026-02-01'),
+        lastInboundAt: new Date('2026-02-01'),
         needsReplyClearedAt: new Date('2026-01-01'),
       })),
     })
@@ -744,17 +745,46 @@ describe('LeadsService.getLead', () => {
     expect(res.needsReply).toBe(true)
   })
 
-  it('needsReply false: direction outbound', async () => {
+  it('needsReply false: lastInboundAt < needsReplyClearedAt', async () => {
+    const convRepo = mkConvRepo({
+      findOpenByContactId: vi.fn(async () => convData({
+        lastMessageDirection: 'outbound',
+        lastMessageAt: new Date('2026-01-01'),
+        lastInboundAt: new Date('2026-01-01'),
+        needsReplyClearedAt: new Date('2026-02-01'),
+      })),
+    })
+    const svc = mkSvc({ convRepo })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.needsReply).toBe(false)
+  })
+
+  it('needsReply false: lastInboundAt null', async () => {
     const convRepo = mkConvRepo({
       findOpenByContactId: vi.fn(async () => convData({
         lastMessageDirection: 'outbound',
         lastMessageAt: new Date('2026-02-01'),
+        lastInboundAt: null,
         needsReplyClearedAt: null,
       })),
     })
     const svc = mkSvc({ convRepo })
     const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
     expect(res.needsReply).toBe(false)
+  })
+
+  it('needsReply true: lastMessageDirection outbound + lastInboundAt > needsReplyClearedAt (bot respondió pero humano no)', async () => {
+    const convRepo = mkConvRepo({
+      findOpenByContactId: vi.fn(async () => convData({
+        lastMessageDirection: 'outbound',
+        lastMessageAt: new Date('2026-01-03'),
+        lastInboundAt: new Date('2026-01-02'),
+        needsReplyClearedAt: new Date('2026-01-01'),
+      })),
+    })
+    const svc = mkSvc({ convRepo })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.needsReply).toBe(true)
   })
 
   it('needsReply false: no hay conversación (contacto sin conversación abierta)', async () => {
