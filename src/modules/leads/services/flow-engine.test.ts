@@ -751,11 +751,58 @@ describe('FlowEngine — milestone last_outbound + realtime publish', () => {
         }),
       })
     )
-    // realtime: conversation.updated con needsReply false
+    // realtime: conversation.updated con needsReply false (lastInboundAt null en el mock)
     expect(extra.realtimeBus.publish).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'conversation.updated',
         payload: expect.objectContaining({ conversationId: 'conv1', lastMessageDirection: 'outbound', needsReply: false }),
+      })
+    )
+  })
+
+  it('bot responde con lastInboundAt seteado → conversation.updated publica needsReply: true', async () => {
+    const flow = demoFlow()
+    const capture: LeadCaptureData = {
+      id: 'cap1', folio: FOLIO, campaignId: 'camp1',
+      campaign: { id: 'camp1', flowDefinition: flow },
+      status: 'pending', campaignLeadId: null, origin: 'unknown',
+    }
+    const savedMessage = {
+      id: 'msg-1', conversationId: 'conv1', direction: 'outbound',
+      providerMessageId: 'out-1', type: 'interactive_buttons',
+      bodyText: 'Hola MC-ABCDE, ¿qué te trae aquí?', status: 'pending',
+      metadata: {}, sentAt: new Date('2026-01-01T00:00:00Z'),
+    }
+    const extra = makeRealtimeAndEvents()
+    const deps = makeDeps({
+      captures: { findPendingByFolio: vi.fn(async () => capture), markMatched: vi.fn(async () => {}) },
+      campaignLeads: {
+        findMostRecentByContactId: vi.fn(async () => null),
+        findByContactAndCampaign: vi.fn(async () => null),
+        create: vi.fn(async (d) => ({
+          id: 'lead1', contactId: d.contactId, campaignId: d.campaignId,
+          campaign: capture.campaign, context: d.context,
+        })),
+        findById: vi.fn(async () => null),
+        save: vi.fn(async (l) => l),
+      },
+      conversations: {
+        findById: vi.fn(async () => ({ id: 'conv1', contactId: 'ct1', contactWaId: '', status: 'open', leadId: 'lead1', lastMessageAt: new Date('2026-01-01'), lastMessageDirection: 'inbound', needsReplyClearedAt: null, lastInboundAt: new Date('2026-01-01') }) as ConversationData),
+        setLead: vi.fn(async () => {}),
+        touchLastMessage: vi.fn(async () => {}),
+      },
+      messages: { create: vi.fn(async () => savedMessage) },
+      ...extra,
+    })
+    const { sender } = makeSender()
+    const engine = new FlowEngine(deps)
+
+    await engine.handleInbound(sender, ctx({ message: msg({ type: 'text', text: `mi folio es ${FOLIO}` }) }))
+
+    expect(extra.realtimeBus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'conversation.updated',
+        payload: expect.objectContaining({ conversationId: 'conv1', lastMessageDirection: 'outbound', needsReply: true }),
       })
     )
   })

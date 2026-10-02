@@ -452,7 +452,9 @@ export class FlowEngine {
         contactWaId: conversation?.contactWaId ?? '',
         lastMessageAt: sentAt.toISOString(),
         lastMessageDirection: 'outbound',
-        needsReply: false,
+        needsReply: conversation?.lastInboundAt != null &&
+          (conversation?.needsReplyClearedAt == null ||
+            conversation!.lastInboundAt! > conversation!.needsReplyClearedAt!),
       },
     })
   }
