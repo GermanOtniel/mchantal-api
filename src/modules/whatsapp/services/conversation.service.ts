@@ -84,8 +84,12 @@ export class ConversationService {
     contactName: string | null,
     contactWaId: string,
     lastMessageAt: Date,
-    lastMessageDirection: 'inbound' | 'outbound'
+    lastMessageDirection: 'inbound' | 'outbound',
+    lastInboundAt: Date | null,
+    needsReplyClearedAt: Date | null,
   ): void {
+    const needsReply = lastInboundAt != null &&
+      (needsReplyClearedAt == null || lastInboundAt > needsReplyClearedAt)
     this.deps.realtimeBus?.publish({
       type: 'conversation.updated',
       payload: {
@@ -95,7 +99,7 @@ export class ConversationService {
         contactWaId,
         lastMessageAt: lastMessageAt.toISOString(),
         lastMessageDirection,
-        needsReply: lastMessageDirection === 'inbound',
+        needsReply,
       },
     })
   }
@@ -198,7 +202,7 @@ export class ConversationService {
           message: toMessagePayload(savedMessage, conversation.leadId, contact.profileName),
         },
       })
-      this.publishConversationUpdated(conversation.id, conversation.leadId, contact.profileName, contact.waId, message.timestamp, 'inbound')
+      this.publishConversationUpdated(conversation.id, conversation.leadId, contact.profileName, contact.waId, message.timestamp, 'inbound', message.timestamp, conversation.needsReplyClearedAt)
 
       if (conversation.leadId) {
         if (isFirstInbound) {
@@ -333,10 +337,11 @@ export class ConversationService {
           message: toMessagePayload(savedMessage, conversation.leadId, null),
         },
       })
-      this.publishConversationUpdated(conversation.id, conversation.leadId, null, conversation.contactWaId, sentAt, 'outbound')
+      this.publishConversationUpdated(conversation.id, conversation.leadId, null, conversation.contactWaId, sentAt, 'outbound', conversation.lastInboundAt, sentAt)
 
       const leadId = conversation.leadId
       if (leadId) {
+        await this.deps.conversations.clearNeedsReplyByLeadId(leadId)
         await this.deps.leadEvents.record({
           leadId,
           type: 'message_milestone',
@@ -453,10 +458,11 @@ export class ConversationService {
           message: toMessagePayload(savedMessage, conversation.leadId, null),
         },
       })
-      this.publishConversationUpdated(conversation.id, conversation.leadId, null, conversation.contactWaId, sentAt, 'outbound')
+      this.publishConversationUpdated(conversation.id, conversation.leadId, null, conversation.contactWaId, sentAt, 'outbound', conversation.lastInboundAt, sentAt)
 
       const leadId = conversation.leadId
       if (leadId) {
+        await this.deps.conversations.clearNeedsReplyByLeadId(leadId)
         await this.deps.leadEvents.record({
           leadId,
           type: 'message_milestone',
