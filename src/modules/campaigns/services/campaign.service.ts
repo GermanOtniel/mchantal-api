@@ -37,7 +37,9 @@ function normalizeOrigins(input: string[] | undefined): string[] {
 function hasInteractiveNode(flow: Record<string, unknown>): boolean {
   const nodes = (flow as { nodes?: Record<string, { type?: string }> }).nodes
   if (!nodes) return false
-  return Object.values(nodes).some((n) => n?.type === 'interactive_buttons')
+  return Object.values(nodes).some(
+    (n) => n?.type === 'interactive_buttons' || n?.type === 'list_message'
+  )
 }
 
 export class CampaignService {

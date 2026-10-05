@@ -14,6 +14,7 @@ import type {
   CampaignLeadData,
   FlowEngineDeps,
   InboundFlowContext,
+  LeadCaptureData,
   LeadFlowStateData,
 } from '../types/leads.types'
 import { FOLIO_REGEX, generateBaseFolio } from './folio.service'
@@ -24,130 +25,101 @@ export class FlowEngine {
   constructor(private readonly deps: FlowEngineDeps) {}
 
   async handleInbound(sender: WhatsAppSender, ctx: InboundFlowContext): Promise<void> {
-    const folio = extractFolio(ctx.message)
-    if (folio) {
-      const enrolled = await this.enrollFromFolio(sender, ctx, folio)
-      if (enrolled) return
-    }
+    const lead = await this.deps.campaignLeads.findMostRecentByContactId(ctx.contactId)
 
-    const conversation = await this.deps.conversations.findById(ctx.conversationId)
-    if (!conversation?.leadId) {
-      const base = await this.deps.campaigns.findActiveBase()
-      if (!base) return
-      await this.enrollInBase(sender, ctx, base)
+    if (!lead) {
+      await this.enrollNewLead(sender, ctx)
       return
     }
 
-    const lead = await this.deps.campaignLeads.findById(conversation.leadId)
-    if (!lead) return
+    if (isTerminal(lead.status)) {
+      const windowHours = Number(process.env.LEAD_REOPEN_WINDOW_HOURS ?? 168)
+      if (isWithinReopenWindow(lead, windowHours)) {
+        await this.reopenLead(lead)
+        return
+      }
+      await this.enrollNewLead(sender, ctx)
+      return
+    }
 
     const flowState = await this.deps.flowStates.findByCampaignLeadId(lead.id)
-    if (this.shouldReengage(lead, flowState)) {
-      const base = await this.deps.campaigns.findActiveBase()
-      if (!base) return
-      await this.enrollInBase(sender, ctx, base)
-      return
-    }
-
     if (flowState?.status === 'active') {
       await this.processFlowInput(sender, ctx, lead, flowState)
-      return
     }
-
-    if (flowState?.status === 'paused') return
-
-    const sibling = await this.findReengageableSibling(ctx.contactId, lead.id)
-    if (sibling) {
-      const base = await this.deps.campaigns.findActiveBase()
-      if (!base) return
-      await this.enrollInBase(sender, ctx, base)
-      return
-    }
-    return
+    // flow paused/completed/no existe → silencio (mensaje ya persistido)
   }
 
-  private async findReengageableSibling(
-    contactId: string,
-    excludeLeadId: string
-  ): Promise<CampaignLeadData | null> {
-    const terminales = await this.deps.campaignLeads.findTerminalByContactId(
-      contactId,
-      excludeLeadId
-    )
-    const elegibles: CampaignLeadData[] = []
-    for (const l of terminales) {
-      const fs = await this.deps.flowStates.findByCampaignLeadId(l.id)
-      if (this.shouldReengage(l, fs)) elegibles.push(l)
-    }
-    if (elegibles.length === 0) return null
-    if (elegibles.length === 1) return elegibles[0]
-    if (!this.deps.leadEvents) return elegibles[0]
-    const winnerId = await this.deps.leadEvents.findLatestStatusChangeLeadId(
-      elegibles.map((l) => l.id)
-    )
-    return elegibles.find((l) => l.id === winnerId) ?? elegibles[0]
+  private async reopenLead(lead: CampaignLeadData): Promise<void> {
+    const prevStatus = lead.status
+    lead.status = 'on_hold'
+    lead.closedAt = null
+    await this.deps.campaignLeads.save(lead)
+    await this.deps.leadEvents?.record({
+      leadId: lead.id,
+      type: 'status_change',
+      fromValue: prevStatus,
+      toValue: 'on_hold',
+      reason: 'reopened_by_inbound',
+      milestoneKind: null,
+      actorUserId: null,
+    })
   }
 
-  private async enrollFromFolio(
+  private async enrollNewLead(sender: WhatsAppSender, ctx: InboundFlowContext): Promise<void> {
+    const folio = extractFolio(ctx.message)
+    if (folio) {
+      const capture = await this.deps.captures.findPendingByFolio(folio)
+      if (capture) {
+        await this.enrollFromCapture(sender, ctx, capture)
+        return
+      }
+    }
+    const base = await this.deps.campaigns.findActiveBase()
+    if (!base) return
+    await this.enrollInBase(sender, ctx, base)
+  }
+
+  private async enrollFromCapture(
     sender: WhatsAppSender,
     ctx: InboundFlowContext,
-    folio: string
-  ): Promise<boolean> {
-    const capture = await this.deps.captures.findPendingByFolio(folio)
-    if (!capture) return false
-
-    let lead = await this.deps.campaignLeads.findByContactAndCampaign(
-      ctx.contactId,
-      capture.campaignId
-    )
-    if (!lead) {
-      lead = await this.deps.campaignLeads.create({
-        contactId: ctx.contactId,
-        campaignId: capture.campaignId,
-        context: { folio: capture.folio, answers: {} },
-        origin: capture.origin,
-      })
-      await this.deps.leadEvents?.record({
-        leadId: lead.id,
-        type: 'enrolled',
-        fromValue: null,
-        toValue: null,
-        reason: null,
-        milestoneKind: null,
-        actorUserId: null,
-      })
-    }
-
+    capture: LeadCaptureData
+  ): Promise<void> {
+    const lead = await this.deps.campaignLeads.create({
+      contactId: ctx.contactId,
+      campaignId: capture.campaignId,
+      context: { folio: capture.folio, answers: {} },
+      origin: capture.origin,
+    })
+    await this.deps.leadEvents?.record({
+      leadId: lead.id,
+      type: 'enrolled',
+      fromValue: null,
+      toValue: null,
+      reason: null,
+      milestoneKind: null,
+      actorUserId: null,
+    })
     await this.deps.captures.markMatched(capture.id, lead.id)
     await this.deps.conversations.setLead(ctx.conversationId, lead.id)
 
     const entryNodeId = findFirstInteractiveNode(capture.campaign.flowDefinition)
-    if (!entryNodeId) return true
-    await this.startOrRestartFlow(sender, ctx, lead, entryNodeId)
-    return true
+    if (!entryNodeId) return
+    await this.startFlow(sender, ctx, lead, entryNodeId)
   }
 
-  private async startOrRestartFlow(
+  private async startFlow(
     sender: WhatsAppSender,
     ctx: InboundFlowContext,
     lead: CampaignLeadData,
     entryNodeId: string
   ): Promise<void> {
-    let flowState = await this.deps.flowStates.findByCampaignLeadId(lead.id)
-    if (!flowState) {
-      flowState = await this.deps.flowStates.create({
-        campaignLeadId: lead.id,
-        currentNodeId: entryNodeId,
-        context: lead.context,
-        status: 'active',
-        lastInteractionAt: new Date(),
-      })
-    } else if (flowState.status !== 'active') {
-      // Re-engagement: reset a active y limpia completedAt. executeNode seteará currentNodeId=entry y lastInteractionAt.
-      flowState.status = 'active'
-      flowState.completedAt = null
-      await this.deps.flowStates.save(flowState)
-    }
+    const flowState = await this.deps.flowStates.create({
+      campaignLeadId: lead.id,
+      currentNodeId: entryNodeId,
+      context: lead.context,
+      status: 'active',
+      lastInteractionAt: new Date(),
+    })
     await this.executeNode(sender, ctx, lead, flowState, entryNodeId)
   }
 
@@ -156,59 +128,26 @@ export class FlowEngine {
     ctx: InboundFlowContext,
     base: BaseCampaignData
   ): Promise<void> {
-    let lead = await this.deps.campaignLeads.findByContactAndCampaign(
-      ctx.contactId,
-      base.id
-    )
-    if (!lead) {
-      lead = await this.deps.campaignLeads.create({
-        contactId: ctx.contactId,
-        campaignId: base.id,
-        context: { folio: generateBaseFolio(), answers: {} },
-        origin: 'unknown',
-      })
-      await this.deps.leadEvents?.record({
-        leadId: lead.id,
-        type: 'enrolled',
-        fromValue: null,
-        toValue: null,
-        reason: 'base_campaign',
-        milestoneKind: null,
-        actorUserId: null,
-      })
-    } else if (lead.status === 'disqualified') {
-      // Re-engagement: reactiva el lead descalificado para romper el loop.
-      // Un lead re-engagedado deja de ser terminal (status -> 'new') hasta que
-      // un operador lo vuelva a cerrar; así no re-dispara en cada mensaje.
-      const prevStatus = lead.status
-      lead.status = 'new'
-      lead = await this.deps.campaignLeads.save(lead)
-      await this.deps.leadEvents?.record({
-        leadId: lead.id,
-        type: 'status_change',
-        fromValue: prevStatus,
-        toValue: 'new',
-        reason: 're_engagement',
-        milestoneKind: null,
-        actorUserId: null,
-      })
-    }
-
+    const lead = await this.deps.campaignLeads.create({
+      contactId: ctx.contactId,
+      campaignId: base.id,
+      context: { folio: generateBaseFolio(), answers: {} },
+      origin: 'unknown',
+    })
+    await this.deps.leadEvents?.record({
+      leadId: lead.id,
+      type: 'enrolled',
+      fromValue: null,
+      toValue: null,
+      reason: 'base_campaign',
+      milestoneKind: null,
+      actorUserId: null,
+    })
     await this.deps.conversations.setLead(ctx.conversationId, lead.id)
 
     const entryNodeId = findFirstInteractiveNode(base.flowDefinition)
     if (!entryNodeId) return
-    await this.startOrRestartFlow(sender, ctx, lead, entryNodeId)
-  }
-
-  private shouldReengage(lead: CampaignLeadData, flowState: LeadFlowStateData | null): boolean {
-    // Solo los leads descalificados (cerrados por un operador) re-entran al flujo
-    // automático de base. `qualified` es un buen lead en el pipeline de ventas:
-    // si escribe sin folio, lo atiende el ejecutivo (no se yanking al automation).
-    if (lead.status !== 'disqualified') return false
-    // Respeta el control manual del agente.
-    if (flowState?.status === 'paused') return false
-    return true
+    await this.startFlow(sender, ctx, lead, entryNodeId)
   }
 
   private async processFlowInput(
@@ -513,10 +452,22 @@ export class FlowEngine {
         contactWaId: conversation?.contactWaId ?? '',
         lastMessageAt: sentAt.toISOString(),
         lastMessageDirection: 'outbound',
-        needsReply: false,
+        needsReply: conversation?.lastInboundAt != null &&
+          (conversation?.needsReplyClearedAt == null ||
+            conversation!.lastInboundAt! > conversation!.needsReplyClearedAt!),
       },
     })
   }
+}
+
+export function isTerminal(status: string): boolean {
+  return status === 'qualified' || status === 'disqualified'
+}
+
+export function isWithinReopenWindow(lead: { closedAt?: Date | null }, windowHours: number): boolean {
+  if (!lead.closedAt) return false
+  const elapsed = Date.now() - lead.closedAt.getTime()
+  return elapsed < windowHours * 3600 * 1000
 }
 
 function extractFolio(message: NormalizedMessage): string | null {

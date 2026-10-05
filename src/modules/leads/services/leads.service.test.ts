@@ -43,6 +43,7 @@ function mkLeadsRepo(over: Partial<CampaignLeadRepositoryPort> = {}): CampaignLe
     findByContactAndCampaign: vi.fn(async () => null),
     create: vi.fn(async () => leadData()),
     findById: vi.fn(async () => leadData()),
+    findMostRecentByContactId: vi.fn(async () => null),
     save: vi.fn(async (l) => l),
     listAll: vi.fn(async () => []),
     listLeads: vi.fn(async () => ({ items: [leadItem()], total: 1 })),
@@ -729,11 +730,12 @@ describe('LeadsService.getLead', () => {
     expect(res.answers.some((a) => a.prompt === '¿Qué producto te interesa?')).toBe(true)
   })
 
-  it('needsReply true: inbound con lastMessageAt > needsReplyClearedAt', async () => {
+  it('needsReply true: lastInboundAt > needsReplyClearedAt', async () => {
     const convRepo = mkConvRepo({
       findOpenByContactId: vi.fn(async () => convData({
-        lastMessageDirection: 'inbound',
+        lastMessageDirection: 'outbound',
         lastMessageAt: new Date('2026-02-01'),
+        lastInboundAt: new Date('2026-02-01'),
         needsReplyClearedAt: new Date('2026-01-01'),
       })),
     })
@@ -743,17 +745,46 @@ describe('LeadsService.getLead', () => {
     expect(res.needsReply).toBe(true)
   })
 
-  it('needsReply false: direction outbound', async () => {
+  it('needsReply false: lastInboundAt < needsReplyClearedAt', async () => {
+    const convRepo = mkConvRepo({
+      findOpenByContactId: vi.fn(async () => convData({
+        lastMessageDirection: 'outbound',
+        lastMessageAt: new Date('2026-01-01'),
+        lastInboundAt: new Date('2026-01-01'),
+        needsReplyClearedAt: new Date('2026-02-01'),
+      })),
+    })
+    const svc = mkSvc({ convRepo })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.needsReply).toBe(false)
+  })
+
+  it('needsReply false: lastInboundAt null', async () => {
     const convRepo = mkConvRepo({
       findOpenByContactId: vi.fn(async () => convData({
         lastMessageDirection: 'outbound',
         lastMessageAt: new Date('2026-02-01'),
+        lastInboundAt: null,
         needsReplyClearedAt: null,
       })),
     })
     const svc = mkSvc({ convRepo })
     const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
     expect(res.needsReply).toBe(false)
+  })
+
+  it('needsReply true: lastMessageDirection outbound + lastInboundAt > needsReplyClearedAt (bot respondió pero humano no)', async () => {
+    const convRepo = mkConvRepo({
+      findOpenByContactId: vi.fn(async () => convData({
+        lastMessageDirection: 'outbound',
+        lastMessageAt: new Date('2026-01-03'),
+        lastInboundAt: new Date('2026-01-02'),
+        needsReplyClearedAt: new Date('2026-01-01'),
+      })),
+    })
+    const svc = mkSvc({ convRepo })
+    const res = await svc.getLead({ permissions: perms(PERMISSIONS.LEADS_ATTEND, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1' })
+    expect(res.needsReply).toBe(true)
   })
 
   it('needsReply false: no hay conversación (contacto sin conversación abierta)', async () => {
@@ -1076,6 +1107,63 @@ describe('LeadsService.changeStatus', () => {
     expect(leadEvents.record).toHaveBeenCalledWith(expect.objectContaining({
       leadId: 'l1', type: 'status_change', fromValue: 'new', toValue: 'qualified', reason: 'calificado', milestoneKind: null, actorUserId: 'u1',
     }))
+  })
+
+  it('cambiar a qualified → setea closedAt', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ status: 'in_progress', closedAt: null })) })
+    const svc = mkSvc({ leadsRepo })
+    await svc.changeStatus({ permissions: perms(PERMISSIONS.LEADS_CHANGE_STATUS, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', status: 'qualified', reason: 'r' })
+    expect(leadsRepo.save).toHaveBeenCalledWith(expect.objectContaining({ status: 'qualified', closedAt: expect.any(Date) }))
+  })
+
+  it('cambiar a disqualified → setea closedAt', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ status: 'in_progress', closedAt: null })) })
+    const svc = mkSvc({ leadsRepo })
+    await svc.changeStatus({ permissions: perms(PERMISSIONS.LEADS_CHANGE_STATUS, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', status: 'disqualified', reason: 'r' })
+    expect(leadsRepo.save).toHaveBeenCalledWith(expect.objectContaining({ status: 'disqualified', closedAt: expect.any(Date) }))
+  })
+
+  it('cambiar qualified → disqualified → actualiza closedAt, permitido', async () => {
+    const oldClosedAt = new Date('2026-01-01')
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ status: 'qualified', closedAt: oldClosedAt })) })
+    const svc = mkSvc({ leadsRepo })
+    await svc.changeStatus({ permissions: perms(PERMISSIONS.LEADS_CHANGE_STATUS, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', status: 'disqualified', reason: 'corrección' })
+    const savedArg = (leadsRepo.save as ReturnType<typeof vi.fn>).mock.calls[0][0] as CampaignLeadData
+    expect(savedArg.status).toBe('disqualified')
+    expect(savedArg.closedAt).toBeInstanceOf(Date)
+    expect(savedArg.closedAt).not.toBe(oldClosedAt)
+  })
+
+  it('cambiar disqualified → qualified → actualiza closedAt, permitido', async () => {
+    const oldClosedAt = new Date('2026-01-01')
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ status: 'disqualified', closedAt: oldClosedAt })) })
+    const svc = mkSvc({ leadsRepo })
+    await svc.changeStatus({ permissions: perms(PERMISSIONS.LEADS_CHANGE_STATUS, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', status: 'qualified', reason: 'corrección' })
+    const savedArg = (leadsRepo.save as ReturnType<typeof vi.fn>).mock.calls[0][0] as CampaignLeadData
+    expect(savedArg.status).toBe('qualified')
+    expect(savedArg.closedAt).toBeInstanceOf(Date)
+    expect(savedArg.closedAt).not.toBe(oldClosedAt)
+  })
+
+  it('cambiar qualified → on_hold → error CLOSED_LEAD_IMMUTABLE', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ status: 'qualified', closedAt: new Date() })) })
+    const svc = mkSvc({ leadsRepo })
+    await expect(svc.changeStatus({ permissions: perms(PERMISSIONS.LEADS_CHANGE_STATUS, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', status: 'on_hold', reason: 'r' })).rejects.toMatchObject({ statusCode: 400, code: 'CLOSED_LEAD_IMMUTABLE' })
+  })
+
+  it('cambiar disqualified → new → error CLOSED_LEAD_IMMUTABLE', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ status: 'disqualified', closedAt: new Date() })) })
+    const svc = mkSvc({ leadsRepo })
+    await expect(svc.changeStatus({ permissions: perms(PERMISSIONS.LEADS_CHANGE_STATUS, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', status: 'new', reason: 'r' })).rejects.toMatchObject({ statusCode: 400, code: 'CLOSED_LEAD_IMMUTABLE' })
+  })
+
+  it('cambiar new → in_progress → no toca closedAt, permitido', async () => {
+    const leadsRepo = mkLeadsRepo({ findById: vi.fn(async () => leadData({ status: 'new', closedAt: null })) })
+    const svc = mkSvc({ leadsRepo })
+    await svc.changeStatus({ permissions: perms(PERMISSIONS.LEADS_CHANGE_STATUS, PERMISSIONS.LEADS_READ_ALL), userId: 'u1', leadId: 'l1', status: 'in_progress', reason: 'r' })
+    const savedArg = (leadsRepo.save as ReturnType<typeof vi.fn>).mock.calls[0][0] as CampaignLeadData
+    expect(savedArg.status).toBe('in_progress')
+    expect(savedArg.closedAt).toBeNull()
   })
 })
 

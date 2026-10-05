@@ -1,4 +1,3 @@
-import { In } from 'typeorm'
 import { AppDataSource } from '../../../database/data-source'
 import { CampaignLead } from '../../../entities/leads/campaign-lead.entity'
 import type { FlowDefinition } from '../../campaigns/types/flow.types'
@@ -29,6 +28,7 @@ function toData(lead: CampaignLead): CampaignLeadData {
     status: lead.status,
     enrolledAt: lead.enrolledAt,
     origin: lead.origin,
+    closedAt: lead.closedAt,
   }
 }
 
@@ -47,7 +47,7 @@ function applyLeadFilters(qb: LeadQB, p: ListLeadsRepoParams): void {
     qb.andWhere('(cl.id::text = :qExact OR cl.context->>\'folio\' ILIKE :qLike)', { qExact: p.q, qLike: `%${p.q}%` })
   }
   if (p.needsReply === true) {
-    qb.andWhere(`wc.last_message_direction = 'inbound' AND wc.last_message_at > COALESCE(wc.needs_reply_cleared_at, '-infinity'::timestamptz)`)
+    qb.andWhere(`wc.last_inbound_at IS NOT NULL AND wc.last_inbound_at > COALESCE(wc.needs_reply_cleared_at, '-infinity'::timestamptz)`)
   }
 }
 
@@ -86,6 +86,15 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
     return lead ? toData(lead) : null
   }
 
+  async findMostRecentByContactId(contactId: string): Promise<CampaignLeadData | null> {
+    const lead = await this.repo.findOne({
+      where: { contactId },
+      relations: ['campaign'],
+      order: { enrolledAt: 'DESC' },
+    })
+    return lead ? toData(lead) : null
+  }
+
   async save(lead: CampaignLeadData): Promise<CampaignLeadData> {
     const entity = await this.repo.findOne({ where: { id: lead.id } })
     if (!entity) throw new Error('CampaignLead no encontrado')
@@ -94,6 +103,7 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
     entity.assignedExecutiveId = lead.assignedExecutiveId ?? null
     entity.assignedAt = lead.assignedAt ?? null
     entity.status = lead.status
+    entity.closedAt = lead.closedAt ?? null
     await this.repo.save(entity)
     return lead
   }
@@ -143,7 +153,7 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
       .addSelect('executive.full_name', 'assignedExecutiveName')
       .addSelect('wc.last_inbound_at', 'lastMessageReceivedAt')
       .addSelect(
-        `CASE WHEN wc.last_message_direction = 'inbound' AND wc.last_message_at > COALESCE(wc.needs_reply_cleared_at, '-infinity'::timestamptz) THEN true ELSE false END`,
+        `CASE WHEN wc.last_inbound_at IS NOT NULL AND wc.last_inbound_at > COALESCE(wc.needs_reply_cleared_at, '-infinity'::timestamptz) THEN true ELSE false END`,
         'needsReply'
       )
       .leftJoin('campaigns', 'campaign', 'campaign.id = cl.campaign_id')
@@ -202,7 +212,7 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
     const qb = this.repo
       .createQueryBuilder('cl')
       .leftJoin('whatsapp_conversations', 'wc', "wc.lead_id = cl.id AND wc.status = 'open'")
-      .where(`wc.last_message_direction = 'inbound' AND wc.last_message_at > COALESCE(wc.needs_reply_cleared_at, '-infinity'::timestamptz)`)
+      .where(`wc.last_inbound_at IS NOT NULL AND wc.last_inbound_at > COALESCE(wc.needs_reply_cleared_at, '-infinity'::timestamptz)`)
     if (scopeUserId) {
       qb.andWhere('cl.assigned_executive_id = :scopeUserId', { scopeUserId })
     }
@@ -219,17 +229,6 @@ export class CampaignLeadRepository implements CampaignLeadRepositoryPort {
       select: ['id'],
     })
     return Boolean(found)
-  }
-
-  async findTerminalByContactId(
-    contactId: string,
-    excludeLeadId: string
-  ): Promise<CampaignLeadData[]> {
-    const leads = await this.repo.find({
-      where: { contactId, status: In(['qualified', 'disqualified']) },
-      relations: ['campaign'],
-    })
-    return leads.filter((l) => l.id !== excludeLeadId).map(toData)
   }
 
   async findOpenSiblingsByContactId(

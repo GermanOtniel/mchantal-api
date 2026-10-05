@@ -25,6 +25,8 @@ import type {
 } from '../../executives/types/executives.types'
 import type { LeadFlowStateRepositoryPort } from '../types/leads.types'
 
+import { isTerminal } from '../services/flow-engine'
+
 // Replica local de findFirstInteractiveNode del FlowEngine (sin importar flow-engine para evitar acoplamiento).
 function findFirstInteractiveNode(flow: FlowDefinition): string | null {
   const nodes = flow.nodes ?? {}
@@ -255,10 +257,9 @@ export class LeadsService {
 
     const needsReply =
       conversation != null &&
-      conversation.lastMessageDirection === 'inbound' &&
-      conversation.lastMessageAt != null &&
+      conversation.lastInboundAt != null &&
       (conversation.needsReplyClearedAt == null ||
-        conversation.lastMessageAt > conversation.needsReplyClearedAt)
+        conversation.lastInboundAt > conversation.needsReplyClearedAt)
 
     let assignedExecutive: { id: string; fullName: string } | null = null
     if (lead.assignedExecutiveId) {
@@ -406,7 +407,19 @@ export class LeadsService {
       throw new HttpError('Reason required', 400, 'REASON_REQUIRED')
     }
     const prev = lead.status
+
+    // Bloquear reapertura manual de leads cerrados
+    if (isTerminal(prev) && !isTerminal(status)) {
+      throw new HttpError('Cannot reopen a closed lead manually', 400, 'CLOSED_LEAD_IMMUTABLE')
+    }
+
     lead.status = status
+
+    // Gestionar closedAt
+    if (isTerminal(status)) {
+      lead.closedAt = new Date()
+    }
+
     await this.campaignLeads.save(lead)
     await this.leadEvents.record({
       leadId,

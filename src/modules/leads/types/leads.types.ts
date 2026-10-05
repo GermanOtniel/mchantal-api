@@ -38,6 +38,7 @@ export type CampaignLeadData = {
   status: string
   enrolledAt: Date
   origin: string
+  closedAt?: Date | null
 }
 
 export type LeadFlowStateData = {
@@ -105,6 +106,7 @@ export interface CampaignLeadRepositoryPort {
   ): Promise<CampaignLeadData | null>
   create(data: CreateCampaignLeadData): Promise<CampaignLeadData>
   findById(id: string): Promise<CampaignLeadData | null>
+  findMostRecentByContactId(contactId: string): Promise<CampaignLeadData | null>
   save(lead: CampaignLeadData): Promise<CampaignLeadData>
   listAll(): Promise<LeadListItem[]>
   listLeads(params: ListLeadsRepoParams): Promise<LeadsRepoPage>
@@ -113,10 +115,6 @@ export interface CampaignLeadRepositoryPort {
     contactId: string,
     assigneeUserId: string
   ): Promise<boolean>
-  findTerminalByContactId(
-    contactId: string,
-    excludeLeadId: string
-  ): Promise<CampaignLeadData[]>
   findOpenSiblingsByContactId(
     contactId: string,
     excludeLeadId: string,
@@ -347,5 +345,4 @@ export type LeadEventResponse = {
 export interface LeadEventsRepositoryPort {
   record(data: Omit<LeadEventData, 'id' | 'createdAt'> & { createdAt?: Date }): Promise<LeadEventData>
   listByLead(leadId: string): Promise<LeadEventData[]>
-  findLatestStatusChangeLeadId(leadIds: string[]): Promise<string | null>
 }
