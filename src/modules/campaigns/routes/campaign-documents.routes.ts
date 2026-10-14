@@ -4,6 +4,7 @@ import { PERMISSIONS } from '../../../shared/rbac/permissions.catalog'
 import {
   loadPermissionsHook,
   requirePermission,
+  requireAnyPermission,
 } from '../../../shared/rbac/rbac.hooks'
 import { CampaignDocumentsController } from '../controllers/campaign-documents.controller'
 import { CampaignDocumentRepository } from '../repositories/campaign-document.repository'
@@ -27,7 +28,10 @@ export const campaignDocumentsPlugin: FastifyPluginAsyncTypebox = async (app) =>
   app.get(
     '/:campaignId/documents',
     {
-      preHandler: requirePermission(PERMISSIONS.CAMPAIGNS_MANAGE),
+      preHandler: requireAnyPermission(
+        PERMISSIONS.CAMPAIGNS_MANAGE,
+        PERMISSIONS.LEADS_ATTEND
+      ),
       schema: {
         response: { 200: CampaignDocumentListResponseSchema },
       },
